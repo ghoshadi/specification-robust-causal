@@ -1,17 +1,22 @@
-source("./utils.R")
+# ==============================================================================
+# Specification-robust Causal Inference (Ghosh & Rothenhaeusler 2026)
+# This contains all simulations used in the main paper.
+# ==============================================================================
 
-get_ci_from_ests <- function(tau.hat, tau.se, alpha = 0.05){
-  return(c(tau.hat - qnorm(alpha/2, lower.tail = F)*tau.se, 
-           tau.hat + qnorm(alpha/2, lower.tail = F)*tau.se))
-}
-alpha = 0.05
+rm(list=ls())
+source('./utils.R')
+source('./main.R')
+
+n_samples <- 1000; n_boot <- 100; n_sims <- 100
+n_cores = detectCores()
+alpha = 0.05; z = qnorm(alpha/2, lower.tail = F)
 
 ##-------------------------------------------------------
 ## Example: Two confounders
 ##-------------------------------------------------------
 
-set.seed(42)
-n <- 1000
+set.seed(123)
+n = n_samples
 tau = 1 # true ATE
 X1 = rnorm(n); X2 = rnorm(n)
 A = as.numeric(runif(n) <= 1/(exp(5*X1+5*X2)+1))
@@ -27,20 +32,19 @@ ci_2 = get_ci_from_ests(summary(fit2)$coef["A",1], summary(fit2)$coef["A",2], al
 ci_naive = range(c(ci_1,ci_2))
 
 # Applying our reweighting approach
-out = assump_robust_lm(Y, A, data.frame(X1, X2), list(c("X1"),c("X1","X2")), verbose = T)
+out = specification_robust_lm(Y, A, data.frame(X1, X2), list(c("X1"),c("X1","X2")), verbose = T)
 
 # bootstrap estimate of the variance of reweighted estimators
-bootstrap_assump_robust_lm <- function(iter) {
+bootstrap_specification_robust_lm <- function(iter) {
   indices <- sample(1:n, replace = TRUE)
   Y_boot <- Y[indices]
   A_boot <- A[indices]
   X_boot <- cbind(X1[indices], X2[indices])
   colnames(X_boot) = c("X1", "X2")
-  result <- assump_robust_lm(Y_boot, A_boot, X_boot, list(c("X1"), c("X1","X2")))
+  result <- specification_robust_lm(Y_boot, A_boot, X_boot, list(c("X1"), c("X1","X2")))
   return(list(rewt = result$rewt.estimates, ireg = result$ireg.estimates))
 }
-n_boot <- 1000
-boot_results <- pbmclapply(1:n_boot, bootstrap_assump_robust_lm, mc.cores = detectCores()-1)
+boot_results <- pbmclapply(1:n_boot, bootstrap_specification_robust_lm, mc.cores = n_cores)
 rewt.estimates <- do.call(rbind, lapply(boot_results, function(x) x$rewt))
 rewt_se <- mean(apply(rewt.estimates, 2, sd)) 
 
@@ -62,8 +66,8 @@ mean(out$weights*X1) # \E_w[X_1]
 # Preparing a plot for the paper
 #-------------------------------------------------------
 
-set.seed(42)
-n <- 1e6 # change this to 1e7
+set.seed(123)
+n <- 1e6
 tau = 1 # true ATE
 X1 = rnorm(n); X2 = rnorm(n)
 A = as.numeric(runif(n) <= 1/(exp(5*X1+5*X2)+1))
@@ -79,7 +83,7 @@ ci_2 = get_ci_from_ests(summary(fit2)$coef["A",1], summary(fit2)$coef["A",2], al
 ci_naive = range(c(ci_1,ci_2))
 
 # Applying our reweighting approach
-out = assump_robust_lm(Y, A, data.frame(X1, X2), list(c("X1"),c("X1","X2")), verbose = T)
+out = specification_robust_lm(Y, A, data.frame(X1, X2), list(c("X1"),c("X1","X2")), verbose = T)
 
 # Plotting the histograms
 compare_hists_overlay(X1, out$weights, xlab = "X1", draw.curve = T,
@@ -93,28 +97,24 @@ compare_hists_overlay(X2, out$weights, xlab = "X2", draw.curve = T,
 
 print(tauR <- mean(out$rewt.estimates))
 
-n_boot <- 1000; num_sims <- 1000
-mc.cores = detectCores()
-alpha = 0.05; z = qnorm(alpha/2, lower.tail = F)
-
 run_experiment <- function(itr) {
   set.seed(itr)
-  n <- 1e3
+  n = n_samples
   tau = 1 # true ATE 
   X1 = rnorm(n); X2 = rnorm(n)
   A = as.numeric(runif(n) <= 1/(exp(5*X1+5*X2)+1))
   Y = A * (1 + X1 - 5*X2) + 4*X2 + rnorm(n)
-  out <- assump_robust_lm(Y, A, cbind(X1, X2), list(c("X1"), c("X1","X2")))
-  bootstrap_assump_robust_lm <- function(iter) {
+  out <- specification_robust_lm(Y, A, cbind(X1, X2), list(c("X1"), c("X1","X2")))
+  bootstrap_specification_robust_lm <- function(iter) {
     indices <- sample(1:length(Y), replace = TRUE)
     Y_boot <- Y[indices]
     A_boot <- A[indices]
     X_boot <- cbind(X1[indices], X2[indices])
     colnames(X_boot) = c("X1", "X2")
-    result <- assump_robust_lm(Y_boot, A_boot, X_boot, list(c("X1"), c("X1", "X2")))
+    result <- specification_robust_lm(Y_boot, A_boot, X_boot, list(c("X1"), c("X1", "X2")))
     return(list(rewt = result$rewt.estimates, ireg = result$ireg.estimates))
   }
-  boot_results <- mclapply(1:n_boot, bootstrap_assump_robust_lm, mc.cores = mc.cores)
+  boot_results <- mclapply(1:n_boot, bootstrap_specification_robust_lm, mc.cores = n_cores)
   rewt.estimates <- do.call(rbind, lapply(boot_results, function(x) x$rewt))
   ireg_estimates <- do.call(rbind, lapply(boot_results, function(x) x$ireg))
   
@@ -139,11 +139,11 @@ run_experiment <- function(itr) {
   return(c(ireg.ecov, naive.ecov, rewt.ecov, ireg.len, naive.len, rewt.len))
 }
 
-set.seed(42)
-results <- pblapply(1:num_sims, run_experiment)
-write.csv(do.call(rbind, results), "newEg1_1000reps_1000boot.csv", row.names = F)
+set.seed(123)
+results <- pblapply(1:n_sims, run_experiment)
+write.csv(do.call(rbind, results), paste0("Eg1_",n_sims,"sims_",n_boot,"boot.csv"), row.names = F)
 
-results_matrix = matrix(apply(read.csv("newEg1_1000reps_1000boot.csv"), 2, mean), 
+results_matrix = matrix(apply(read.csv(paste0("Eg1_",n_sims,"sims_",n_boot,"boot.csv")), 2, mean), 
                         nrow = 4, byrow = F,
                         dimnames = list(c("C.I. using adj set 1", 
                                           "C.I. using adj set 2", 
@@ -158,8 +158,8 @@ print(results_matrix, digits = 3)
 ## Example: M-bias
 ##-------------------------------------------------------
 
-set.seed(42)
-n <- 1000
+set.seed(123)
+n = n_samples
 tau = 1 # true ATE 
 U1 = rnorm(n); U2 = rnorm(n) # unobserved
 X1 = rnorm(n)
@@ -178,20 +178,19 @@ ci_2 = get_ci_from_ests(summary(fit2)$coef["A",1], summary(fit2)$coef["A",2], al
 ci_naive = range(c(ci_1,ci_2))
 
 # Applying our reweighting approach
-out = assump_robust_lm(Y, A, data.frame(X1, X2), list(c("X1"),c("X1","X2")), verbose = T)
+out = specification_robust_lm(Y, A, data.frame(X1, X2), list(c("X1"),c("X1","X2")), verbose = T)
 
 # bootstrap estimate of the variance of reweighted estimators
-bootstrap_assump_robust_lm <- function(iter) {
+bootstrap_specification_robust_lm <- function(iter) {
   indices <- sample(1:n, replace = TRUE)
   Y_boot <- Y[indices]
   A_boot <- A[indices]
   X_boot <- cbind(X1[indices], X2[indices])
   colnames(X_boot) = c("X1", "X2")
-  result <- assump_robust_lm(Y_boot, A_boot, X_boot, list(c("X1"), c("X1","X2")))
+  result <- specification_robust_lm(Y_boot, A_boot, X_boot, list(c("X1"), c("X1","X2")))
   return(list(rewt = result$rewt.estimates, ireg = result$ireg.estimates))
 }
-n_boot <- 1000
-boot_results <- pbmclapply(1:n_boot, bootstrap_assump_robust_lm, mc.cores = detectCores()-1)
+boot_results <- pbmclapply(1:n_boot, bootstrap_specification_robust_lm, mc.cores = n_cores)
 rewt.estimates <- do.call(rbind, lapply(boot_results, function(x) x$rewt))
 rewt_se <- mean(apply(rewt.estimates, 2, sd)) 
 
@@ -213,8 +212,8 @@ mean(out$weights*X1) # \E_w[X_1]
 # Preparing a plot for the paper
 #-------------------------------------------------------
 
-set.seed(42)
-n <- 1e6 # change this to 1e7
+set.seed(123)
+n <- 1e6
 tau = 1 # true ATE 
 U1 = rnorm(n); U2 = rnorm(n) # unobserved
 X1 = rnorm(n)
@@ -233,7 +232,7 @@ ci_2 = get_ci_from_ests(summary(fit2)$coef["A",1], summary(fit2)$coef["A",2], al
 ci_naive = range(c(ci_1,ci_2))
 
 # Applying our reweighting approach
-out = assump_robust_lm(Y, A, data.frame(X1, X2), list(c("X1"),c("X1","X2")), verbose = T)
+out = specification_robust_lm(Y, A, data.frame(X1, X2), list(c("X1"),c("X1","X2")), verbose = T)
 
 # Plotting the histograms
 compare_hists_overlay(X1, out$weights, xlab = "X1", draw.curve = T,
@@ -247,13 +246,9 @@ compare_hists_overlay(X2, out$weights, xlab = "X2", draw.curve = T,
 
 print(tauR <- mean(out$rewt.estimates))
 
-n_boot <- 1000; num_sims <- 1000
-mc.cores = detectCores()
-alpha = 0.05; z = qnorm(alpha/2, lower.tail = F)
-
 run_experiment <- function(itr) {
   set.seed(itr)
-  n <- 1000
+  n = n_samples
   tau = 1 # true ATE 
   U1 = rnorm(n); U2 = rnorm(n) # unobserved
   X1 = rnorm(n)
@@ -261,17 +256,17 @@ run_experiment <- function(itr) {
   X2 = U1 + U2 # adjusting for X2 introduces M-bias
   Y1 = tau + X1 - U2 + rnorm(n); Y0 = 5*U2 + rnorm(n)
   Y = ifelse(A==1, Y1, Y0) 
-  out <- assump_robust_lm(Y, A, cbind(X1, X2), list(c("X1"), c("X1","X2")))
-  bootstrap_assump_robust_lm <- function(iter) {
+  out <- specification_robust_lm(Y, A, cbind(X1, X2), list(c("X1"), c("X1","X2")))
+  bootstrap_specification_robust_lm <- function(iter) {
     indices <- sample(1:length(Y), replace = TRUE)
     Y_boot <- Y[indices]
     A_boot <- A[indices]
     X_boot <- cbind(X1[indices], X2[indices])
     colnames(X_boot) = c("X1", "X2")
-    result <- assump_robust_lm(Y_boot, A_boot, X_boot, list(c("X1"), c("X1", "X2")))
+    result <- specification_robust_lm(Y_boot, A_boot, X_boot, list(c("X1"), c("X1", "X2")))
     return(list(rewt = result$rewt.estimates, ireg = result$ireg.estimates))
   }
-  boot_results <- mclapply(1:n_boot, bootstrap_assump_robust_lm, mc.cores = mc.cores)
+  boot_results <- mclapply(1:n_boot, bootstrap_specification_robust_lm, mc.cores = n_cores)
   rewt.estimates <- do.call(rbind, lapply(boot_results, function(x) x$rewt))
   ireg_estimates <- do.call(rbind, lapply(boot_results, function(x) x$ireg))
   
@@ -296,11 +291,38 @@ run_experiment <- function(itr) {
   return(c(ireg.ecov, naive.ecov, rewt.ecov, ireg.len, naive.len, rewt.len))
 }
 
-set.seed(42)
-results <- pblapply(1:num_sims, run_experiment)
-write.csv(do.call(rbind, results), "newEg2_1000reps_1000boot.csv", row.names = F)
+set.seed(123)
+results <- pblapply(1:n_sims, run_experiment)
+write.csv(do.call(rbind, results), paste0("Eg2_",n_sims,"sims_",n_boot,"boot.csv"), row.names = F)
 
-results_matrix = matrix(apply(read.csv("newEg2_1000reps_1000boot.csv"), 2, mean), 
+results_matrix = matrix(apply(read.csv(paste0("Eg2_",n_sims,"sims_",n_boot,"boot.csv")), 2, mean), 
+                        nrow = 4, byrow = F,
+                        dimnames = list(c("C.I. using adj set 1", 
+                                          "C.I. using adj set 2", 
+                                          "naive C.I. (range of prev C.I.'s)", 
+                                          "specification-robust C.I."),
+                                        c("emp coverage", "avg width")
+                        )
+)
+print(results_matrix, digits = 3)
+
+
+#-------------------------------------------------------
+# n_sims = 1000; n_boot = 1000
+#-------------------------------------------------------
+
+results_matrix = matrix(apply(read.csv(paste0("Eg1_1000sims_1000boot.csv")), 2, mean), 
+                        nrow = 4, byrow = F,
+                        dimnames = list(c("C.I. using adj set 1", 
+                                          "C.I. using adj set 2", 
+                                          "naive C.I. (range of prev C.I.'s)", 
+                                          "specification-robust C.I."),
+                                        c("emp coverage", "avg width")
+                        )
+)
+print(results_matrix, digits = 3)
+
+results_matrix = matrix(apply(read.csv(paste0("Eg2_1000sims_1000boot.csv")), 2, mean), 
                         nrow = 4, byrow = F,
                         dimnames = list(c("C.I. using adj set 1", 
                                           "C.I. using adj set 2", 
