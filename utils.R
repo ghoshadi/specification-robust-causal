@@ -190,7 +190,7 @@ make_learners <- function(num.trees = 400, seed = 123) {
 }
 
 # ===========================================================================
-# g/h learner functions (h_k=E[tau(X_{S_k}) | X_common], g_k = h_1 - h_{k+1})
+# g/m learner functions (m_k=E[tau(X_{S_k}) | X_common], g_k = m_1 - m_k)
 # ===========================================================================
 
 make_g_learners_grf <- function(num.trees = 400, seed = 123) {
