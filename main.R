@@ -99,7 +99,7 @@ specification_robust <- function(response,
                                  aipw_quantile   = 0.99,  # winsorise extreme AIPW summands
                                  weight_quantile = 0.99,  # truncate extreme transfer weights
                                  nu_regularize     = 1,     # ridge shrinkage toward 1/K
-                                 nu_use_h1       = TRUE,  # use projected contrasts while finding nu
+                                 nu_use_m1       = TRUE,  # use projected contrasts while finding nu
                                  bc_scale        = 1,     # use bias-correction? 1 = Yes, 0 = No 
                                  bc_g_from_cal   = FALSE, # independent g for bias-correction residual
                                  psi_quantile    = 0.99,  # winsorise extreme influence function summands
@@ -133,8 +133,8 @@ specification_robust <- function(response,
   cycles <- rbind(c(1, 2, 3), c(2, 3, 1), c(3, 1, 2))
   
   if (verbose) {
-    # cat(sprintf("g_method=%s  nu_use_h1=%s  bc_g_from_cal=%s  nu_regularize=%.2f  bc_scale=%.2f\n",
-    #             g_method, nu_use_h1, bc_g_from_cal, nu_regularize, bc_scale))
+    # cat(sprintf("g_method=%s  nu_use_m1=%s  bc_g_from_cal=%s  nu_regularize=%.2f  bc_scale=%.2f\n",
+    #             g_method, nu_use_m1, bc_g_from_cal, nu_regularize, bc_scale))
     cat(sprintf("K=%d  common={%s}  n=%d\n\n", K, paste(common, collapse=", "), n))
   }
   
@@ -160,15 +160,16 @@ specification_robust <- function(response,
     X_tr  <- X[tr_idx, , drop = FALSE]
     X_cal <- X[cal_idx, , drop = FALSE]
     X_ev  <- X[ev_idx, , drop = FALSE]
-    y_tr <- y[tr_idx]; y_cal <- y[cal_idx]; y_ev <- y[ev_idx]
-    a_tr <- a[tr_idx]; a_cal <- a[cal_idx]; a_ev <- a[ev_idx]
+    y_tr <- y[tr_idx]; y_ev <- y[ev_idx]
+    a_tr <- a[tr_idx]; a_ev <- a[ev_idx]
     n_ev <- length(ev_idx)
     
     # ==========================================================
     # Fit mu_a, propensity on TRAIN.  Predict on all folds.
     # ==========================================================
-    tau_tr_list <- tau_cal_list <- tau_ev_list <- vector("list", K)
-    aipw_ev_list <- m_ev_list <- vector("list", K)
+    tau_ev_list <- vector("list", K)
+    aipw_ev_list <- vector("list", K)
+    m_cal_list <- m_ev_list <- mu0_cal_list <- mu1_cal_list <- vector("list", K)
     
     for (k in seq_len(K)) {
       vars_k <- adj_sets[[k]]
@@ -184,13 +185,13 @@ specification_robust <- function(response,
       
       mu0_tr  <- learners$predict_outcome(mu0_fit, xk_tr)
       mu1_tr  <- learners$predict_outcome(mu1_fit, xk_tr)
-      mu0_cal <- learners$predict_outcome(mu0_fit, xk_cal)
-      mu1_cal <- learners$predict_outcome(mu1_fit, xk_cal)
+      if (bc_g_from_cal) {
+        mu1_cal_list[[k]] <- learners$predict_outcome(mu1_fit, xk_cal)
+        mu0_cal_list[[k]] <- learners$predict_outcome(mu0_fit, xk_cal)
+      }
       mu0_ev  <- learners$predict_outcome(mu0_fit, xk_ev)
       mu1_ev  <- learners$predict_outcome(mu1_fit, xk_ev)
       
-      tau_tr_list[[k]]  <- mu1_tr - mu0_tr
-      tau_cal_list[[k]] <- mu1_cal - mu0_cal
       tau_ev_list[[k]]  <- mu1_ev - mu0_ev
       
       aipw_raw <- tau_ev_list[[k]] +
@@ -200,32 +201,35 @@ specification_robust <- function(response,
       # Winsorise AIPW summands to tame heavy tails
       aipw_ev_list[[k]] <- winsorise(aipw_raw, q = aipw_quantile)
       
-      # h_k = E[tau_k | X_common], trained on TRAIN, predicted on EVAL
-      h_fit <- g_learner$fit(X_tr[, common, drop = FALSE], tau_tr_list[[k]])
-      m_ev_list[[k]] <- g_learner$predict(h_fit, X_ev[, common, drop = FALSE])
+      # m_k = E[mu_1 | X_common] - E[mu_0 | X_common], trained on TRAIN,
+      # predicted on CAL and EVAL
+      m1_fit <- g_learner$fit(X_tr[, common, drop = FALSE], mu1_tr)
+      m0_fit <- g_learner$fit(X_tr[, common, drop = FALSE], mu0_tr)
+      m_cal_list[[k]] <- g_learner$predict(m1_fit, X_cal[, common, drop = FALSE]) -
+                         g_learner$predict(m0_fit, X_cal[, common, drop = FALSE])
+      m_ev_list[[k]]  <- g_learner$predict(m1_fit, X_ev[, common, drop = FALSE]) -
+                         g_learner$predict(m0_fit, X_ev[, common, drop = FALSE])
     }
     
     # ==========================================================
-    # g = E[Delta_tau | X_common], fit ONCE on TRAIN, predict on CAL and EVAL
+    # g_k = m_1 - m_k, predicted on CAL and EVAL
     # ==========================================================
-    g_fits_train <- lapply(2:K, function(k)
-      g_learner$fit(X_tr[, common, drop = FALSE],
-                    tau_tr_list[[1]] - tau_tr_list[[k]])
-    )
-    G_cal <- do.call(cbind, lapply(g_fits_train, function(f)
-      g_learner$predict(f, X_cal[, common, drop = FALSE])))
-    G_ev_from_train <- do.call(cbind, lapply(g_fits_train, function(f)
-      g_learner$predict(f, X_ev[, common, drop = FALSE])))
+    G_cal <- do.call(cbind, lapply(2:K, function(k)
+      m_cal_list[[1]] - m_cal_list[[k]]))
+    G_ev <- do.call(cbind, lapply(2:K, function(k)
+      m_ev_list[[1]] - m_ev_list[[k]]))
     
     # Optional: independent g for BC residual from CAL fold
     if (bc_g_from_cal) {
-      g_fits_cal <- lapply(2:K, function(k)
-        g_learner$fit(X_cal[, common, drop = FALSE],
-                      tau_cal_list[[1]] - tau_cal_list[[k]]))
-      G_ev_for_bc <- do.call(cbind, lapply(g_fits_cal, function(f)
-        g_learner$predict(f, X_ev[, common, drop = FALSE])))
+      m_ev_from_cal <- lapply(seq_len(K), function(k)
+        g_learner$predict(g_learner$fit(X_cal[, common, drop = FALSE],
+                                        mu1_cal_list[[k]]), X_ev[, common, drop = FALSE]) -
+        g_learner$predict(g_learner$fit(X_cal[, common, drop = FALSE],
+                                        mu0_cal_list[[k]]), X_ev[, common, drop = FALSE]))
+      G_ev_for_bc <- do.call(cbind, lapply(2:K, function(k)
+        m_ev_from_cal[[1]] - m_ev_from_cal[[k]]))
     } else {
-      G_ev_for_bc <- G_ev_from_train
+      G_ev_for_bc <- G_ev
     }
     
     # ==========================================================
@@ -235,7 +239,7 @@ specification_robust <- function(response,
     lambda_hat <- as.numeric(w_obj$lambda)
     
     # Transfer weights on EVAL with truncation
-    w_ev_raw <- as.numeric(exp(drop(as.matrix(G_ev_from_train) %*% lambda_hat)))
+    w_ev_raw <- as.numeric(exp(drop(as.matrix(G_ev) %*% lambda_hat)))
     w_ev_raw <- w_ev_raw / mean(w_ev_raw)
     wt <- truncate_weights(w_ev_raw, q = weight_quantile)
     w_ev <- wt$w
@@ -248,10 +252,9 @@ specification_robust <- function(response,
     m_ev_mat    <- do.call(cbind, m_ev_list)
     
     tau_R1 <- mean(w_ev * aipw_ev_mat[, 1])
-    G_ev   <- G_ev_from_train
     M_nu   <- crossprod(G_ev, G_ev * w_ev) / n_ev
     
-    if (nu_use_h1) {
+    if (nu_use_m1) {
       rhs_nu <- colMeans(w_ev * G_ev * (m_ev_mat[, 1] - tau_R1))
     } else {
       rhs_nu <- colMeans(w_ev * G_ev * (tau_ev_mat[, 1] - tau_R1))
@@ -289,7 +292,7 @@ specification_robust <- function(response,
     tau_hat_oof[ev_idx, ] <- tau_ev_mat
     aipw_oof[ev_idx, ]    <- aipw_ev_mat
     m_hat_oof[ev_idx, ]   <- m_ev_mat
-    g_hat_oof[ev_idx, ]   <- G_ev_from_train
+    g_hat_oof[ev_idx, ]   <- G_ev
     weights_oof[ev_idx]   <- w_ev
     eta_oof[ev_idx]       <- eta_ev
     psi_oof[ev_idx]       <- psi_ev
@@ -332,13 +335,13 @@ specification_robust <- function(response,
   w_pool   <- truncate_weights(w_pool / mean(w_pool), q = weight_quantile)$w
   tau_R1_pool <- mean(w_pool * aipw_oof[, 1])
   M_pool <- crossprod(g_hat_oof, g_hat_oof * w_pool) / n
-  if (nu_use_h1) {
+  if (nu_use_m1) {
     rhs_pool <- colMeans(w_pool * g_hat_oof * (m_hat_oof[, 1] - tau_R1_pool))
   } else {
     rhs_pool <- colMeans(w_pool * g_hat_oof * (tau_hat_oof[, 1] - tau_R1_pool))
   }
-  nu_pool <- c(1 - sum(solve_nu(M_pool, rhs_pool, K, nu_regularize)),
-               solve_nu(M_pool, rhs_pool, K, nu_regularize))
+  nu_pool_2K <- solve_nu(M_pool, rhs_pool, K, nu_regularize)
+  nu_pool <- c(1 - sum(nu_pool_2K), nu_pool_2K)
   
   # Convex hull CI
   aipw_cis <- lapply(seq_len(K), function(k)
@@ -379,7 +382,7 @@ specification_robust <- function(response,
     weights = weights_oof, fold_id = fold_id,
     common_covariates = common, adj_sets = adj_sets,
     ref_index = ref_index, alpha = alpha,
-    settings = list(g_method = g_method, nu_use_h1 = nu_use_h1,
+    settings = list(g_method = g_method, nu_use_m1 = nu_use_m1,
                     bc_g_from_cal = bc_g_from_cal, nu_regularize = nu_regularize,
                     bc_scale = bc_scale, propensity_clip = propensity_clip,
                     aipw_quantile = aipw_quantile, weight_quantile = weight_quantile,
