@@ -6,7 +6,7 @@ In observational causal inference, domain knowledge often leaves multiple covari
 The development version of our package `specrobust` can be installed using devtools:
 
 ```R
-devtools::install_github("ghoshadi/specrobust")
+devtools::install_github('ghoshadi/specrobust')
 ```
 
 Example usage:
@@ -19,29 +19,29 @@ X1 = rnorm(n); X2 = rnorm(n); X3 = rnorm(n)
 A = as.numeric(runif(n) <= 1/(exp(5*X1 + 5*X2 + 5*X3) + 1))
 Y = A * (1 + X1 - 5*X2 + X3) + 4*X2 + rnorm(n)
 out = specrobust(Y, A, data.frame(X1, X2, X3),
-                 list(c("X1", "X3"), c("X1", "X2", "X3")))
+                 list(c('X1', 'X3'), c('X1', 'X2', 'X3')))
 print(out)
 ```
 
-The contrasts are estimated by cross-fitted generalized random forests by default. Passing `reg_mode = "lm"` estimates them by linear regression with treatment-covariate interactions instead and bootstraps the standard errors:
+The contrasts are estimated by cross-fitted generalized random forests by default. Passing `reg_mode = 'lm'` estimates them by linear regression with treatment-covariate interactions instead, and bootstraps the standard errors:
 
 ```R
 out_lm = specrobust(Y, A, data.frame(X1, X2, X3),
-                    list(c("X1", "X3"), c("X1", "X2", "X3")),
-                    reg_mode = "lm", n_boot = 1000)
+                    list(c('X1', 'X3'), c('X1', 'X2', 'X3')),
+                    reg_mode = 'lm', n_boot = 1000)
 print(out_lm)
 ```
 
-Any variable in the intersection of the adjustment sets, or any known function of those variables, can be protected under the reweighting (see paper for details):
+Any variable in the intersection of the adjustment sets, or any known function of those variables, can be protected under the reweighting (see the paper for details):
 
 ```R
 out_prot = specrobust(Y, A, data.frame(X1, X2, X3),
-                      list(c("X1", "X3"), c("X1", "X2", "X3")),
-                      protect_vars = "X3")
+                      list(c('X1', 'X3'), c('X1', 'X2', 'X3')),
+                      protect_vars = 'X3')
 print(out_prot)
 ```
 
-Plotting the output shows the histogram of the shared covariates by default:
+Plotting the output shows the histograms of the shared covariates by default:
 
 ```R
 plot(out, breaks = 30)
@@ -51,8 +51,8 @@ plot(out_prot, breaks = 30)
 To plot the transfer weights, use:
 
 ```R
-plot(out, type = "weights")
-plot(out_prot, type = "weights")
+plot(out, type = 'weights')
+plot(out_prot, type = 'weights')
 ```
 
 To see histograms of other covariates:
