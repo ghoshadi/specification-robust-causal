@@ -43,4 +43,4 @@ out_prot = specrobust(Y, A, data.frame(X1, X2), list("X1", c("X1", "X2")),
 
 #### References
 Aditya Ghosh and Dominik Rothenhäusler.
-<b>Which Covariates to Adjust for? Specification-robust Causal Inference in Observational Studies.</b>, [arXiv preprint arXiv:2505.08729](https://arxiv.org/abs/2505.08729).
+<b>Which Covariates to Adjust for? Specification-robust Causal Inference in Observational Studies</b>, [arXiv preprint arXiv:2505.08729](https://arxiv.org/abs/2505.08729).
