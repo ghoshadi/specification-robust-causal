@@ -39,6 +39,7 @@ out_prot = specrobust(Y, A, data.frame(X1, X2, X3),
                       list(c('X1', 'X3'), c('X1', 'X2', 'X3')),
                       protect_vars = 'X3')
 print(out_prot)
+c(mean(X3*out$weights), mean(X3*out_prot$weights)) - mean(X3)
 ```
 
 Plotting the output shows the histograms of the shared covariates by default:
