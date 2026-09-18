@@ -102,43 +102,43 @@ specrobust <- function(response,
                        protect_fun = NULL,
                        protect_orthonormalize = FALSE,
                        alpha = 0.05,
-                       ref_index = 1L,
+                       ref_index = 1,
                        num_folds = 2,
                        num_trees = 400,
                        propensity_clip = 1e-3,
                        nu_regularize = 1e-6,
                        bias_corr = TRUE,
-                       aipw_trim = 0.01,
-                       weight_trim = 0.05,
+                       aipw_trim = 0,
+                       weight_trim = 0,
                        n_boot = 1000,
-                       n_cores = 1L,
+                       n_cores = 1,
                        seed = 42,
                        verbose = FALSE,
                        return_full = FALSE) {
 
   reg_mode <- match.arg(reg_mode)
   validate_inputs(response, treatment, covariates, adj_sets)
-  stopifnot(length(alpha) == 1L, is.finite(alpha), alpha > 0, alpha < 1)
+  stopifnot(length(alpha) == 1, is.finite(alpha), alpha > 0, alpha < 1)
 
   if (reg_mode == "lm") {
     if (length(protect_vars) > 0 || !is.null(protect_fun))
       stop("Covariate protection is available only with reg_mode = \"grf\".")
     n_boot <- as.integer(n_boot)
     n_cores <- as.integer(n_cores)
-    if (!(length(n_boot) == 1L) || is.na(n_boot) || n_boot == 1L || n_boot < 0L)
+    if (!(length(n_boot) == 1) || is.na(n_boot) || n_boot == 1 || n_boot < 0)
       stop("n_boot must be 0, for no bootstrap, or at least 2.")
-    stopifnot(length(n_cores) == 1L, !is.na(n_cores), n_cores >= 1)
+    stopifnot(length(n_cores) == 1, !is.na(n_cores), n_cores >= 1)
     out <- fit_lm(response, treatment, covariates, adj_sets,
                   ref_index = ref_index, verbose = verbose, alpha = alpha,
                   seed = seed, n_boot = n_boot, n_cores = n_cores)
   } else {
-    stopifnot(length(bias_corr) == 1L, is.logical(bias_corr), !is.na(bias_corr))
-    stopifnot(length(weight_trim) == 1L, is.finite(weight_trim),
+    stopifnot(length(bias_corr) == 1, is.logical(bias_corr), !is.na(bias_corr))
+    stopifnot(length(weight_trim) == 1, is.finite(weight_trim),
               weight_trim >= 0, weight_trim < 1)
-    stopifnot(length(aipw_trim) == 1L, is.finite(aipw_trim),
+    stopifnot(length(aipw_trim) == 1, is.finite(aipw_trim),
               aipw_trim >= 0, aipw_trim < 0.5)
     num_folds <- as.integer(num_folds)
-    stopifnot(length(num_folds) == 1L, !is.na(num_folds), num_folds >= 2)
+    stopifnot(length(num_folds) == 1, !is.na(num_folds), num_folds >= 2)
     out <- fit_grf(response, treatment, covariates, adj_sets,
                    protect_vars = protect_vars, protect_fun = protect_fun,
                    protect_orthonormalize = protect_orthonormalize,

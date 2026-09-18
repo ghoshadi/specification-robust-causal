@@ -5,16 +5,16 @@ fit_grf <- function(response, treatment, covariates, adj_sets,
                     aipw_trim, weight_trim, return_full) {
 
   K <- length(adj_sets)
-  if (is.null(ref_index)) ref_index <- 1L
+  if (is.null(ref_index)) ref_index <- 1
   if (is.character(ref_index))
     ref_index <- switch(ref_index,
-      first    = 1L,
+      first    = 1,
       largest  = which.max(lengths(adj_sets)),
       smallest = which.min(lengths(adj_sets)),
       stop("ref_index must be a numeric index, or one of ",
            "\"first\", \"largest\", \"smallest\""))
   ref_index <- as.integer(ref_index)
-  stopifnot(length(ref_index) == 1L, ref_index >= 1, ref_index <= K)
+  stopifnot(length(ref_index) == 1, ref_index >= 1, ref_index <= K)
   if (ref_index != 1) {
     perm <- c(ref_index:K, if (ref_index > 1) 1:(ref_index - 1))
     adj_sets <- adj_sets[perm]

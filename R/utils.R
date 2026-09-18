@@ -133,7 +133,7 @@ build_protect_block = function(X, common, protect_vars = character(0),
   if (length(blocks) == 0) {
     empty = matrix(NA_real_, n, 0)
     return(list(F = empty, raw = empty, center = numeric(0),
-                names = character(0), d = 0L))
+                names = character(0), d = 0))
   }
 
   f_raw = do.call(cbind, blocks)

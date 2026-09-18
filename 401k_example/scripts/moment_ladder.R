@@ -8,21 +8,17 @@
 rm(list = ls())
 library(specrobust)
 
-WQ_USED <- eval(formals(specrobust)$weight_trim)
-
-.LADDER_FINAL_SOURCED <- TRUE
 source('./401k_example/scripts/ladder_final_plot.R')
 
-RESULTS <- Sys.getenv("SPECROBUST_RESULTS", unset = "401k_example/results")
-PLOTS   <- Sys.getenv("SPECROBUST_PLOTS",   unset = "401k_example/plots")
+results_dir <- "401k_example/results"
+plots_dir   <- "401k_example/plots"
 
-NF        <- suppressWarnings(as.integer(Sys.getenv("LADDER_FOLDS", unset = NA)))
-BCT       <- Sys.getenv("LADDER_BC",     unset = "")
-NUREG     <- suppressWarnings(as.numeric(Sys.getenv("LADDER_NUREG", unset = NA)))
-KMAX      <- as.integer(Sys.getenv("LADDER_KMAX",  unset = "6"))
-D_MAX     <- as.integer(Sys.getenv("LADDER_DMAX",  unset = "40"))
-SE_JUMP   <- 2.0     # stop when the s.e. doubles against the previous order
-ESS_FLOOR <- 0.05    # stop when the pre-trimming effective sample size falls
+weight_trim <- 0.05
+aipw_trim   <- 0.01
+k_max       <- 6
+d_max       <- 40
+se_jump     <- 2.0    # stop when the s.e. doubles against the previous order
+ess_floor   <- 0.05   # stop when the effective sample size falls below this
 
 utils::data("pension", package = "hdm", envir = environment())
 df <- as.data.frame(pension)
@@ -40,7 +36,7 @@ treatment <- df$e401
 base_covs <- c("age", "educ", "family_size", "marital_status", "two_earner",
                "home_ownership", "defined_pension")
 
-COLLECTIONS <- list(
+collections <- list(
   set1 = list(
     adj_sets = list(
       c("age", "educ"),
@@ -60,11 +56,11 @@ COLLECTIONS <- list(
 nrm <- function(u) sqrt(mean(u^2))
 
 compositions <- function(deg, p) {
-  if (p == 1L) return(matrix(deg, 1L, 1L))
-  do.call(rbind, lapply(0:deg, function(v) cbind(v, compositions(deg - v, p - 1L))))
+  if (p == 1) return(matrix(deg, 1, 1))
+  do.call(rbind, lapply(0:deg, function(v) cbind(v, compositions(deg - v, p - 1))))
 }
 monomial_exponents <- function(p, k) {
-  if (k < 1) return(matrix(integer(0), 0L, p))
+  if (k < 1) return(matrix(integer(0), 0, p))
   E <- do.call(rbind, lapply(seq_len(k), function(deg) compositions(deg, p)))
   dimnames(E) <- NULL
   E[order(rowSums(E), -E[, 1]), , drop = FALSE]
@@ -121,10 +117,7 @@ run_ladder <- function(label, adj_sets, protect_req) {
 
   cat("\n================================ ", disp(label),
       " ================================\n", sep = "")
-  cat("weight_trim: ", WQ_USED, "   num_folds: ",
-      if (is.na(NF)) "implementation default" else NF,
-      "   bias_corr: ", if (nzchar(BCT)) BCT else "default",
-      "   nu_regularize: ", if (is.na(NUREG)) "default" else NUREG, "\n", sep = "")
+  cat("weight_trim: ", weight_trim, "   aipw_trim: ", aipw_trim, "\n", sep = "")
   cat("common     : ", paste(common, collapse = ", "), "\n", sep = "")
   cat("requested  : ", paste(protect_req, collapse = ", "), "\n", sep = "")
   cat("protected  : ", paste(protect, collapse = ", "), "\n", sep = "")
@@ -134,7 +127,7 @@ run_ladder <- function(label, adj_sets, protect_req) {
   if (!length(protect)) { cat("nothing admissible to protect; ladder skipped\n"); return(NULL) }
 
   Xp <- df[, protect, drop = FALSE]
-  ob <- onb_nested(Xp, KMAX)
+  ob <- onb_nested(Xp, k_max)
   cat(sprintf("dim V_k    : %s   (of %s requested; the gap is linear dependence\n",
               paste(ob$dim_k, collapse = ", "), paste(ob$req_k, collapse = ", ")))
   cat("             on the sample support)\n")
@@ -143,18 +136,16 @@ run_ladder <- function(label, adj_sets, protect_req) {
   rows <- list(); W <- list()
   se_prev <- NA_real_; stop_at <- NA_integer_; stop_why <- ""
 
-  for (k in 0:KMAX) {
-    d <- if (k == 0) 0L else ob$dim_k[k]
-    if (d > D_MAX) { stop_at <- k; stop_why <- sprintf("dim V_%d = %d exceeds D_MAX = %d", k, d, D_MAX); break }
+  for (k in 0:k_max) {
+    d <- if (k == 0) 0 else ob$dim_k[k]
+    if (d > d_max) { stop_at <- k; stop_why <- sprintf("dim V_%d = %d exceeds d_max = %d", k, d, d_max); break }
 
     pf <- if (d == 0) NULL else local({ QQ <- ob$Q[, seq_len(d), drop = FALSE]; function(xc) QQ })
 
     t0  <- proc.time()[["elapsed"]]
     fargs <- list(response, treatment, covs, adj_sets, protect_fun = pf,
+                  weight_trim = weight_trim, aipw_trim = aipw_trim,
                   verbose = FALSE)
-    if (!is.na(NF)) fargs$num_folds <- NF
-    if (nzchar(BCT)) fargs$bias_corr <- BCT != "0"
-    if (!is.na(NUREG)) fargs$nu_regularize <- NUREG
     fit <- tryCatch(do.call(specrobust, fargs),
       error = function(e) structure(list(msg = conditionMessage(e)), class = "err"))
     el <- proc.time()[["elapsed"]] - t0
@@ -165,7 +156,7 @@ run_ladder <- function(label, adj_sets, protect_req) {
     }
 
     red <- 100 * (1 - diff(fit$ci)/diff(fit$hull_ci))
-    rows[[length(rows) + 1L]] <- data.frame(
+    rows[[length(rows) + 1]] <- data.frame(
       k = k, d = d, estimate = fit$estimate, se = fit$se,
       ci_lo = fit$ci[1], ci_hi = fit$ci[2], width = diff(fit$ci),
       reduction = red,
@@ -182,44 +173,44 @@ run_ladder <- function(label, adj_sets, protect_req) {
                 r$k, r$d, r$estimate, r$se, r$width, r$reduction,
                 100*r$ess_frac, r$kl, r$secs))
 
-    if (!is.na(se_prev) && r$se > SE_JUMP * se_prev) {
-      stop_at <- k; stop_why <- sprintf("the s.e. rose by more than %.1fx against order %d", SE_JUMP, k - 1); break }
-    if (r$ess_frac < ESS_FLOOR) {
-      stop_at <- k; stop_why <- sprintf("the effective sample size fell below %.0f%%", 100*ESS_FLOOR); break }
+    if (!is.na(se_prev) && r$se > se_jump * se_prev) {
+      stop_at <- k; stop_why <- sprintf("the s.e. rose by more than %.1fx against order %d", se_jump, k - 1); break }
+    if (r$ess_frac < ess_floor) {
+      stop_at <- k; stop_why <- sprintf("the effective sample size fell below %.0f%%", 100*ess_floor); break }
     se_prev <- r$se
   }
 
   out <- do.call(rbind, rows)
   out$bal_1   <- vapply(seq_len(nrow(out)), function(i)
-    bal_avg(Xp, W[[i]], 1L),   numeric(1))
+    bal_avg(Xp, W[[i]], 1),   numeric(1))
   out$bal_all <- vapply(seq_len(nrow(out)), function(i)
-    bal_avg(Xp, W[[i]], KMAX), numeric(1))
-  out$bal_1_unprot   <- bal_avg(Xp, W[[1]], 1L)
-  out$bal_all_unprot <- bal_avg(Xp, W[[1]], KMAX)
+    bal_avg(Xp, W[[i]], k_max), numeric(1))
+  out$bal_1_unprot   <- bal_avg(Xp, W[[1]], 1)
+  out$bal_all_unprot <- bal_avg(Xp, W[[1]], k_max)
   if (!is.na(stop_at)) cat(sprintf("\nladder stopped before order %d: %s\n", stop_at, stop_why))
   attr(out, "stop_at") <- stop_at; attr(out, "stop_why") <- stop_why
   attr(out, "protect") <- protect;  attr(out, "dropped")  <- dropped
   attr(out, "dim_k")   <- ob$dim_k
   attr(out, "weights") <- W
   attr(out, "Xp")      <- Xp
-  attr(out, "trim")    <- WQ_USED
+  attr(out, "trim")    <- weight_trim
   out
 }
 
-LAD <- lapply(names(COLLECTIONS), function(lab)
-  run_ladder(lab, COLLECTIONS[[lab]]$adj_sets, COLLECTIONS[[lab]]$protect))
-names(LAD) <- names(COLLECTIONS)
+ladders <- lapply(names(collections), function(lab)
+  run_ladder(lab, collections[[lab]]$adj_sets, collections[[lab]]$protect))
+names(ladders) <- names(collections)
 
 cat("\n\n================ LADDER SUMMARY ================\n")
-for (lab in names(LAD)) {
-  L <- LAD[[lab]]; if (is.null(L)) next
+for (lab in names(ladders)) {
+  L <- ladders[[lab]]; if (is.null(L)) next
   cat("\n", disp(lab), "   protected: ", paste(attr(L, "protect"), collapse = ", "),
       if (length(attr(L, "dropped")))
         paste0("   (dropped: ", paste(attr(L, "dropped"), collapse = ", "), ")") else "",
       "\n", sep = "")
   cat(sprintf("%2s %4s %9s %7s %7s %9s %10s %10s %7s %8s\n",
               "k", "d", "estimate", "s.e.", "width", "reduction",
-              "bal 1st", sprintf("bal 1-%d", KMAX), "ESS", "KL"))
+              "bal 1st", sprintf("bal 1-%d", k_max), "ESS", "KL"))
   for (i in seq_len(nrow(L)))
     cat(sprintf("%2d %4d %9.4f %7.4f %7.4f %8.1f%% %10.2e %10.2e %6.1f%% %8.4f\n",
                 L$k[i], L$d[i], L$estimate[i], L$se[i], L$width[i],
@@ -231,8 +222,8 @@ for (lab in names(LAD)) {
               L$k[b], L$d[b], L$ci_lo[b], L$ci_hi[b], L$reduction[b]))
 }
 
-dir.create(RESULTS, showWarnings = FALSE, recursive = TRUE)
-dir.create(PLOTS,   showWarnings = FALSE, recursive = TRUE)
-f <- file.path(RESULTS, "moment_ladder.rds")
-saveRDS(LAD, f); cat("\nWrote ", f, "\n", sep = "")
-write_final_figures(LAD, PLOTS)
+dir.create(results_dir, showWarnings = FALSE, recursive = TRUE)
+dir.create(plots_dir,   showWarnings = FALSE, recursive = TRUE)
+f <- file.path(results_dir, "moment_ladder.rds")
+saveRDS(ladders, f); cat("\nWrote ", f, "\n", sep = "")
+write_final_figures(ladders, plots_dir)

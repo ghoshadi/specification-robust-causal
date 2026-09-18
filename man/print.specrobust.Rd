@@ -4,7 +4,7 @@
 \alias{print.specrobust}
 \title{Print a specrobust object}
 \usage{
-\method{print}{specrobust}(x, digits = max(3L, getOption("digits") - 3L), ...)
+\method{print}{specrobust}(x, digits = max(3, getOption("digits") - 3), ...)
 }
 \arguments{
 \item{x}{specrobust object}

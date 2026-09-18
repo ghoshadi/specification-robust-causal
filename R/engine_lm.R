@@ -34,16 +34,16 @@ fit_lm <- function(response, treatment, covariates, adj_sets, ref_index,
                    verbose, alpha, seed, n_boot, n_cores) {
 
   K <- length(adj_sets)
-  if (is.null(ref_index)) ref_index <- 1L
+  if (is.null(ref_index)) ref_index <- 1
   if (is.character(ref_index))
     ref_index <- switch(ref_index,
-      first    = 1L,
+      first    = 1,
       largest  = which.max(lengths(adj_sets)),
       smallest = which.min(lengths(adj_sets)),
       stop("ref_index must be a numeric index, or one of ",
            "\"first\", \"largest\", \"smallest\""))
   ref_index <- as.integer(ref_index)
-  stopifnot(length(ref_index) == 1L, ref_index >= 1, ref_index <= K)
+  stopifnot(length(ref_index) == 1, ref_index >= 1, ref_index <= K)
   if (ref_index != 1) {
     perm <- c(ref_index:K, if (ref_index > 1) 1:(ref_index - 1))
     adj_sets <- adj_sets[perm]
@@ -68,8 +68,8 @@ fit_lm <- function(response, treatment, covariates, adj_sets, ref_index,
     get_ci_from_ests(candidate_estimates[k], candidate_se[k], alpha), numeric(2)))
   hull_ci <- c(min(candidate_ci[, 1]), max(candidate_ci[, 2]))
 
-  if (n_boot == 0L) {
-    n_rep <- 0L
+  if (n_boot == 0) {
+    n_rep <- 0
     se <- NA_real_
     ci <- c(NA_real_, NA_real_)
     candidate_se_boot <- rep(NA_real_, K)
@@ -80,7 +80,7 @@ fit_lm <- function(response, treatment, covariates, adj_sets, ref_index,
     one_boot <- function(i)
       tryCatch(lm_one_fit(y[i], a[i], X[i, , drop = FALSE], adj_sets),
                error = function(e) NULL)
-    reps <- if (n_cores > 1L && .Platform$OS.type == "unix")
+    reps <- if (n_cores > 1 && .Platform$OS.type == "unix")
               parallel::mclapply(idx, one_boot, mc.cores = n_cores)
             else lapply(idx, one_boot)
 

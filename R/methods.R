@@ -48,7 +48,7 @@ summary.specrobust = function(object, ...) {
 #' @param ... Additional arguments passed to print methods.
 #' @return `x`, invisibly.
 #' @export
-print.specrobust = function(x, digits = max(3L, getOption("digits") - 3L), ...) {
+print.specrobust = function(x, digits = max(3, getOption("digits") - 3), ...) {
   cat("Specification-robust causal inference (reg_mode = \"", x$reg_mode, "\")\n\n", sep = "")
   cat("Candidate adjustment sets:\n")
   for (k in seq_along(x$adj_sets))
@@ -122,7 +122,7 @@ plot.specrobust = function(x, type = c("covariates", "weights"),
   if (length(vars) == 0) stop("No covariates to plot.")
 
   data = x$covariates[ok, , drop = FALSE]
-  per = function(a, j) if (length(a) == 1L) a[[1L]] else a[[j]]
+  per = function(a, j) if (length(a) == 1) a[[1]] else a[[j]]
 
   as_num = function(v, nm) {
     if (is.numeric(v)) return(as.numeric(v))
@@ -144,7 +144,7 @@ plot.specrobust = function(x, type = c("covariates", "weights"),
          d = list(h$counts/sum(h$counts)/bw, wc/sum(w)/bw))
   })
 
-  nc = min(3L, length(vars))
+  nc = min(3, length(vars))
   nr = ceiling(length(vars)/nc)
   op = graphics::par(mfrow = c(nr, nc), mar = c(4.0, 4.2, 2.4, 0.8),
                      mgp = c(2.3, 0.8, 0))

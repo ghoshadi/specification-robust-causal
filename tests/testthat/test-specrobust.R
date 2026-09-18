@@ -20,8 +20,8 @@ test_that("grf mode reproduces the reference implementation", {
     d = mk()
     out = specrobust(d$Y, d$A, d$X, d$adj_sets)
     expect_s3_class(out, "specrobust")
-    expect_equal(out$protect_d, 0L)
-    expect_length(out$estimate, 1L)
+    expect_equal(out$protect_d, 0)
+    expect_length(out$estimate, 1)
     expect_true(is.finite(out$estimate), is.finite(out$se))
     expect_equal(out$ci, c(out$estimate - stats::qnorm(0.975) * out$se,
                            out$estimate + stats::qnorm(0.975) * out$se))
@@ -45,11 +45,11 @@ test_that("protection engages only when asked", {
   plain = specrobust(d$Y, d$A, d$X, d$adj_sets)
   prot = specrobust(d$Y, d$A, d$X, d$adj_sets, protect_vars = "X1")
 
-  expect_equal(plain$protect_d, 0L)
-  expect_equal(prot$protect_d, 1L)
+  expect_equal(plain$protect_d, 0)
+  expect_equal(prot$protect_d, 1)
   expect_equal(prot$protect_names, "X1")
   expect_false(isTRUE(all.equal(plain$estimate, prot$estimate)))
-  expect_equal(nrow(prot$protected_summary), 1L)
+  expect_equal(nrow(prot$protected_summary), 1)
   expect_equal(prot$protected_summary$original_mean, mean(d$X$X1))
 
   expect_error(specrobust(d$Y, d$A, d$X, d$adj_sets, protect_vars = "X2"),
@@ -105,7 +105,7 @@ test_that("the lm bootstrap is reproducible and core-count independent", {
 
   if (.Platform$OS.type == "unix") {
     p = specrobust(d$Y, d$A, d$X, d$adj_sets, reg_mode = "lm", n_boot = 40,
-                   n_cores = 2L)
+                   n_cores = 2)
     expect_identical(a$se, p$se)
     expect_identical(a$candidate_se_boot, p$candidate_se_boot)
   }

@@ -12,7 +12,7 @@
 rm(list=ls())
 library(specrobust)
 
-RESULTS <- "simulations"
+results_dir <- "simulations"
 
 n_samples <- 1000; n_boot <- 100; n_sims <- 100
 n_cores = parallel::detectCores()
@@ -125,9 +125,9 @@ run_experiment <- function(itr) {
 set.seed(123)
 results <- pbapply::pblapply(1:n_sims, run_experiment)
 write.csv(do.call(rbind, results),
-          file.path(RESULTS, paste0("Eg1_",n_sims,"sims_",n_boot,"boot.csv")), row.names = F)
+          file.path(results_dir, paste0("Eg1_",n_sims,"sims_",n_boot,"boot.csv")), row.names = F)
 
-results_matrix = matrix(apply(read.csv(file.path(RESULTS,
+results_matrix = matrix(apply(read.csv(file.path(results_dir,
                         paste0("Eg1_",n_sims,"sims_",n_boot,"boot.csv"))), 2, mean),
                         nrow = 4, byrow = F,
                         dimnames = list(c("C.I. using adj set 1", 
@@ -255,9 +255,9 @@ run_experiment <- function(itr) {
 set.seed(123)
 results <- pbapply::pblapply(1:n_sims, run_experiment)
 write.csv(do.call(rbind, results),
-          file.path(RESULTS, paste0("Eg2_",n_sims,"sims_",n_boot,"boot.csv")), row.names = F)
+          file.path(results_dir, paste0("Eg2_",n_sims,"sims_",n_boot,"boot.csv")), row.names = F)
 
-results_matrix = matrix(apply(read.csv(file.path(RESULTS,
+results_matrix = matrix(apply(read.csv(file.path(results_dir,
                         paste0("Eg2_",n_sims,"sims_",n_boot,"boot.csv"))), 2, mean),
                         nrow = 4, byrow = F,
                         dimnames = list(c("C.I. using adj set 1", 
@@ -274,7 +274,7 @@ print(results_matrix, digits = 3)
 # n_sims = 1000; n_boot = 1000
 #-------------------------------------------------------
 
-results_matrix = matrix(apply(read.csv(file.path(RESULTS,
+results_matrix = matrix(apply(read.csv(file.path(results_dir,
                         "Eg1_1000sims_1000boot.csv")), 2, mean),
                         nrow = 4, byrow = F,
                         dimnames = list(c("C.I. using adj set 1", 
@@ -286,7 +286,7 @@ results_matrix = matrix(apply(read.csv(file.path(RESULTS,
 )
 print(results_matrix, digits = 3)
 
-results_matrix = matrix(apply(read.csv(file.path(RESULTS,
+results_matrix = matrix(apply(read.csv(file.path(results_dir,
                         "Eg2_1000sims_1000boot.csv")), 2, mean),
                         nrow = 4, byrow = F,
                         dimnames = list(c("C.I. using adj set 1", 

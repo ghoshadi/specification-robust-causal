@@ -8,12 +8,8 @@ rm(list = ls())
 
 library(specrobust)
 
-RESULTS <- "401k_example/results"
-PLOTS   <- "401k_example/plots"
-
-VARS <- c("age", "educ", "income")
-BINS <- list(25, "unit", 25)
-LEG  <- c("topright", "topleft", "topright")
+results_dir <- "401k_example/results"
+plots_dir   <- "401k_example/plots"
 
 utils::data("pension", package = "hdm", envir = environment())
 df <- as.data.frame(pension)
@@ -49,15 +45,18 @@ run_collection <- function(label, adj_sets) {
   out <- specrobust(
     response = response, treatment = treatment,
     covariates = df[, unique(unlist(adj_sets))],
-    adj_sets = adj_sets, verbose = TRUE)
+    adj_sets = adj_sets, weight_trim = 0.05, aipw_trim = 0.01,
+    verbose = TRUE)
 
-  dir.create(RESULTS, showWarnings = FALSE)
-  dir.create(PLOTS,   showWarnings = FALSE)
-  saveRDS(out, file.path(RESULTS, sprintf("401k_default_%s.rds", label)))
+  dir.create(results_dir, showWarnings = FALSE)
+  dir.create(plots_dir,   showWarnings = FALSE)
+  saveRDS(out, file.path(results_dir, sprintf("401k_default_%s.rds", label)))
 
-  f <- file.path(PLOTS, sprintf("401k_default_%s_weights.pdf", label))
+  f <- file.path(plots_dir, sprintf("401k_default_%s_weights.pdf", label))
   pdf(f, width = 12, height = 3.9)
-  plot(out, covariates = VARS, breaks = BINS, legend.pos = LEG)
+  plot(out, covariates = c("age", "educ", "income"),
+       breaks = list(25, "unit", 25),
+       legend.pos = c("topright", "topleft", "topright"))
   invisible(dev.off())
   cat("Wrote ", f, "\n", sep = "")
   out
