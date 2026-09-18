@@ -1,8 +1,5 @@
 ^401k_example$
 ^simulations$
-^main\.R$
-^utils\.R$
-^protect_covariates\.R$
 ^README\.md$
 ^specrobust\.Rproj$
 ^\.Rproj\.user$
