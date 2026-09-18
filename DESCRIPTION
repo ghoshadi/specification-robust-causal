@@ -27,6 +27,6 @@ Imports:
     withr
 Suggests:
     testthat (>= 3.0.0)
-URL: https://github.com/ghoshadi/specification-robust-causal
-BugReports: https://github.com/ghoshadi/specification-robust-causal/issues
+URL: https://github.com/ghoshadi/specrobust
+BugReports: https://github.com/ghoshadi/specrobust/issues
 Config/roxygen2/version: 8.0.0
