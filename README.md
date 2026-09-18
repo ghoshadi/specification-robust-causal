@@ -16,7 +16,6 @@ Example usage:
 
 ```R
 library(specrobust)
-# Two candidate adjustment sets, only the second of which is valid
 set.seed(123)
 n = 500
 X1 = rnorm(n); X2 = rnorm(n)
