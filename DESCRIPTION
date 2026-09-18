@@ -1,8 +1,13 @@
 Package: specrobust
 Title: Specification-Robust Causal Inference in Observational Studies
 Version: 0.0.1
-Authors@R:
-    person("Aditya", "Ghosh", role = c("aut", "cre"), email = "ghoshadi@stanford.edu")
+Authors@R: c(
+    person("Aditya", "Ghosh", role = c("aut", "cre"),
+           email = "ghoshadi@stanford.edu",
+           comment = c(affiliation = "Stanford University")),
+    person("Dominik", "Rothenhaeusler", role = "aut",
+           email = "rdominik@stanford.edu",
+           comment = c(affiliation = "Stanford University")))
 Description: Estimation and inference for the average treatment effect when
     several candidate covariate adjustment sets are plausible and it is not
     known which of them satisfies ignorability, as proposed by Ghosh and
