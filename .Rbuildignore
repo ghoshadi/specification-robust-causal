@@ -1,0 +1,12 @@
+^401k_example$
+^simulations$
+^main\.R$
+^utils\.R$
+^protect_covariates\.R$
+^README\.md$
+^LICENSE\.md$
+^specrobust\.Rproj$
+^\.Rproj\.user$
+^\.github$
+^_pkgdown\.yml$
+^docs$

@@ -6,8 +6,7 @@
 # ==============================================================================
 rm(list = ls())
 
-source('./utils.R')
-source('./main.R')
+library(specrobust)
 
 RESULTS <- "401k_example/results"
 PLOTS   <- "401k_example/plots"
@@ -47,7 +46,7 @@ adj_sets_set2 <- list(
 
 run_collection <- function(label, adj_sets) {
   cat("\n================ ", label, " ================\n", sep = "")
-  out <- specification_robust(
+  out <- specrobust(
     response = response, treatment = treatment,
     covariates = df[, unique(unlist(adj_sets))],
     adj_sets = adj_sets, verbose = TRUE)
@@ -58,7 +57,7 @@ run_collection <- function(label, adj_sets) {
 
   f <- file.path(PLOTS, sprintf("401k_default_%s_weights.pdf", label))
   pdf(f, width = 12, height = 3.9)
-  plot_hists(df, out$weights, vars = VARS, breaks = BINS, legend.pos = LEG)
+  plot(out, covariates = VARS, breaks = BINS, legend.pos = LEG)
   invisible(dev.off())
   cat("Wrote ", f, "\n", sep = "")
   out
@@ -73,5 +72,5 @@ cat(sprintf("%-6s %9s %8s %22s %11s\n",
 for (nm in c("set1", "set2")) {
   o <- get(paste0("out_", nm))
   cat(sprintf("%-6s %9.4f %8.4f  [%8.4f, %8.4f] %10.1f%%\n", nm, o$estimate, o$se,
-              o$ci[1], o$ci[2], 100 * (1 - diff(o$ci)/diff(o$convex_hull_ci))))
+              o$ci[1], o$ci[2], 100 * (1 - diff(o$ci)/diff(o$hull_ci))))
 }

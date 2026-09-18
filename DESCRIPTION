@@ -1,0 +1,32 @@
+Package: specrobust
+Title: Specification-Robust Causal Inference in Observational Studies
+Version: 0.0.1
+Authors@R:
+    person("Aditya", "Ghosh", role = c("aut", "cre"), email = "ghoshadi@stanford.edu")
+Description: Estimation and inference for the average treatment effect when
+    several candidate covariate adjustment sets are plausible and it is not
+    known which of them satisfies ignorability, as proposed by Ghosh and
+    Rothenhaeusler (2025+). The population is reweighted, as little as
+    possible in Kullback-Leibler divergence, so that every candidate estimand
+    agrees, and the effect on that reweighted population is reported with a
+    confidence interval that is valid as long as at least one candidate is
+    valid and whose width shrinks at the parametric rate. Contrasts may be
+    estimated by cross-fitted generalized random forests or by interacted
+    linear regression, and any known function of the shared covariates may be
+    protected from the reweighting.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+Imports:
+    graphics,
+    grDevices,
+    grf,
+    MASS,
+    parallel,
+    stats,
+    withr
+Suggests:
+    testthat (>= 3.0.0)
+URL: https://github.com/ghoshadi/specification-robust-causal
+BugReports: https://github.com/ghoshadi/specification-robust-causal/issues
+Config/roxygen2/version: 8.0.0

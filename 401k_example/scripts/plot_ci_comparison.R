@@ -97,13 +97,13 @@ ring <- function(x, y) {
 
 geom <- function(o, rng, extra = list()) {
   z   <- stats::qnorm(1 - o$alpha/2)
-  K   <- length(o$aipw_estimates)
+  K   <- length(o$candidate_estimates)
   ex  <- lapply(extra, function(e) e$fit)
-  lo  <- c(o$aipw_estimates - z * o$aipw_se, o$convex_hull_ci[1], o$ci[1],
+  lo  <- c(o$candidate_estimates - z * o$candidate_se, o$hull_ci[1], o$ci[1],
            vapply(ex, function(q) q$ci[1], 0))
-  hi  <- c(o$aipw_estimates + z * o$aipw_se, o$convex_hull_ci[2], o$ci[2],
+  hi  <- c(o$candidate_estimates + z * o$candidate_se, o$hull_ci[2], o$ci[2],
            vapply(ex, function(q) q$ci[2], 0))
-  est <- c(o$aipw_estimates, NA, o$estimate,
+  est <- c(o$candidate_estimates, NA, o$estimate,
            vapply(ex, function(q) q$estimate, 0))
 
   left  <- c(lapply(seq_len(K), function(k) bquote(AIPW ~ (S[.(k)]))),
@@ -178,8 +178,8 @@ names(exs) <- names(fits)
 
 rng <- range(unlist(lapply(fits, function(o) {
   z <- stats::qnorm(1 - o$alpha/2)
-  c(o$aipw_estimates - z*o$aipw_se, o$aipw_estimates + z*o$aipw_se,
-    o$convex_hull_ci, o$ci)
+  c(o$candidate_estimates - z*o$candidate_se, o$candidate_estimates + z*o$candidate_se,
+    o$hull_ci, o$ci)
 })), unlist(lapply(exs, function(v)
        vapply(v, function(e) e$fit$ci, numeric(2)))))
 XR <- Sys.getenv("SPECROBUST_XRANGE", unset = "")
@@ -200,24 +200,24 @@ for (lab in names(gs)) {
 cat("\n")
 
 for (lab in names(fits)) {
-  o <- fits[[lab]]; K <- length(o$aipw_estimates)
+  o <- fits[[lab]]; K <- length(o$candidate_estimates)
   z <- stats::qnorm(1 - o$alpha/2)
   cat("================ ", lab, " ================\n", sep = "")
   cat(sprintf("%-36s %9s %8s %22s %8s %8s\n", "", "estimate", "s.e.",
               "95% CI", "width", "red."))
   for (k in seq_len(K))
     cat(sprintf("%-36s %9.4f %8.4f  [%8.4f, %8.4f] %8.4f\n",
-                sprintf("AIPW (S%d)", k), o$aipw_estimates[k], o$aipw_se[k],
-                o$aipw_estimates[k] - z*o$aipw_se[k],
-                o$aipw_estimates[k] + z*o$aipw_se[k], 2*z*o$aipw_se[k]))
+                sprintf("AIPW (S%d)", k), o$candidate_estimates[k], o$candidate_se[k],
+                o$candidate_estimates[k] - z*o$candidate_se[k],
+                o$candidate_estimates[k] + z*o$candidate_se[k], 2*z*o$candidate_se[k]))
   cat(sprintf("%-36s %9s %8s  [%8.4f, %8.4f] %8.4f\n", "Convex hull", "", "",
-              o$convex_hull_ci[1], o$convex_hull_ci[2], diff(o$convex_hull_ci)))
+              o$hull_ci[1], o$hull_ci[2], diff(o$hull_ci)))
   for (e in c(list(list(label = BASE, fit = o)), exs[[lab]])) {
     q <- e$fit
     cat(sprintf("%-36s %9.4f %8.4f  [%8.4f, %8.4f] %8.4f %7.1f%%\n",
                 if (is.character(e$label)) e$label else BASE,
                 q$estimate, q$se, q$ci[1], q$ci[2], diff(q$ci),
-                100 * (1 - diff(q$ci)/diff(o$convex_hull_ci))))
+                100 * (1 - diff(q$ci)/diff(o$hull_ci))))
   }
   cat("\n")
 }

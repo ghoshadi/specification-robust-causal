@@ -6,11 +6,9 @@
 # The fit is written to 401k_example/results, the figures to 401k_example/plots.
 # ==============================================================================
 rm(list = ls())
-source('./utils.R')
-source('./main.R')
-source('./protect_covariates.R')
+library(specrobust)
 
-WQ_USED <- eval(formals(specification_robust_protect)$weight_trim)
+WQ_USED <- eval(formals(specrobust)$weight_trim)
 
 .LADDER_FINAL_SOURCED <- TRUE
 source('./401k_example/scripts/ladder_final_plot.R')
@@ -157,7 +155,7 @@ run_ladder <- function(label, adj_sets, protect_req) {
     if (!is.na(NF)) fargs$num_folds <- NF
     if (nzchar(BCT)) fargs$bias_corr <- BCT != "0"
     if (!is.na(NUREG)) fargs$nu_regularize <- NUREG
-    fit <- tryCatch(do.call(specification_robust_protect, fargs),
+    fit <- tryCatch(do.call(specrobust, fargs),
       error = function(e) structure(list(msg = conditionMessage(e)), class = "err"))
     el <- proc.time()[["elapsed"]] - t0
 
@@ -166,13 +164,13 @@ run_ladder <- function(label, adj_sets, protect_req) {
       stop_at <- k; stop_why <- paste("the fit failed:", fit$msg); break
     }
 
-    red <- 100 * (1 - diff(fit$ci)/diff(fit$convex_hull_ci))
+    red <- 100 * (1 - diff(fit$ci)/diff(fit$hull_ci))
     rows[[length(rows) + 1L]] <- data.frame(
       k = k, d = d, estimate = fit$estimate, se = fit$se,
       ci_lo = fit$ci[1], ci_hi = fit$ci[2], width = diff(fit$ci),
       reduction = red,
-      hull_lo = fit$convex_hull_ci[1], hull_hi = fit$convex_hull_ci[2],
-      hull_width = diff(fit$convex_hull_ci),
+      hull_lo = fit$hull_ci[1], hull_hi = fit$hull_ci[2],
+      hull_width = diff(fit$hull_ci),
       ess_frac = ess_of(fit$weights)/fit$n_used,
       kl = kl_div(fit$weights_raw),
       lam_norm = mean(sqrt(rowSums(fit$lambda_by_fold^2))),
@@ -184,18 +182,6 @@ run_ladder <- function(label, adj_sets, protect_req) {
                 r$k, r$d, r$estimate, r$se, r$width, r$reduction,
                 100*r$ess_frac, r$kl, r$secs))
 
-    if (k == 0) {
-      rargs <- list(response, treatment, covs, adj_sets,
-                    verbose = FALSE)
-      if (!is.na(NF)) rargs$num_folds <- NF
-      if (nzchar(BCT)) rargs$bias_corr <- BCT != "0"
-      if (!is.na(NUREG)) rargs$nu_regularize <- NUREG
-      ref <- do.call(specification_robust, rargs)
-      gap <- max(abs(c(ref$estimate - fit$estimate, ref$se - fit$se)))
-      cat(sprintf("      order 0 against main.R: worst gap %.3e  %s\n", gap,
-                  if (gap == 0) "(exact, as it must be)" else "** NOT EXACT **"))
-      if (gap != 0) stop("order 0 does not reproduce main.R; the protected code has drifted.")
-    }
     if (!is.na(se_prev) && r$se > SE_JUMP * se_prev) {
       stop_at <- k; stop_why <- sprintf("the s.e. rose by more than %.1fx against order %d", SE_JUMP, k - 1); break }
     if (r$ess_frac < ESS_FLOOR) {

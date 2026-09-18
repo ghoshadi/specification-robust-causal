@@ -7,8 +7,7 @@
 # ==============================================================================
 rm(list = ls())
 
-source('./utils.R')
-source('./protect_covariates.R')
+library(specrobust)
 
 RESULTS <- "401k_example/results"
 PLOTS   <- "401k_example/plots"
@@ -56,6 +55,53 @@ adj_sets_set2 <- list(
   c(base_covs, "ira_participation"),
   c(base_covs, "income", "ira_participation"))
 
+stack_weight_grid <- function(data, weights, vars, labels = NULL, breaks = 25,
+                       legend.pos = "topleft", hcol = "orange",
+                       hcol2 = "skyblue2",
+                       legend.text = c("original population",
+                                       "new target population")) {
+  if (!is.list(weights)) weights <- list(weights)
+  nr <- length(weights); nc <- length(vars)
+  per <- function(a, j) if (length(a) == 1L) a[[1L]] else a[[j]]
+
+  cell <- function(i, j) {
+    w <- weights[[i]]; ok <- !is.na(w)
+    x <- data[[vars[j]]][ok]; w <- w[ok]
+    b <- per(breaks, j)
+    if (identical(b, "unit"))
+      b <- seq(floor(min(x)) - 0.5, ceiling(max(x)) + 0.5, by = 1)
+    h  <- hist(x, breaks = b, plot = FALSE)
+    bw <- diff(h$breaks)
+    wc <- as.numeric(tapply(w, cut(x, h$breaks, include.lowest = TRUE), sum))
+    wc[is.na(wc)] <- 0
+    list(breaks = h$breaks, xlim = range(x),
+         d = list(h$counts/sum(h$counts)/bw, wc/sum(w)/bw))
+  }
+  cells <- lapply(seq_len(nr), function(i)
+    lapply(seq_len(nc), function(j) cell(i, j)))
+  ylim <- lapply(seq_len(nc), function(j)
+    range(unlist(lapply(cells, function(row) row[[j]]$d))))
+
+  op <- par(mfrow = c(nr, nc), mar = c(4.0, 4.2, 2.4, 0.8),
+            mgp = c(2.3, 0.8, 0))
+  on.exit(par(op))
+  col <- adjustcolor(c(hcol, hcol2), alpha.f = 0.6)
+  for (i in seq_len(nr)) for (j in seq_len(nc)) {
+    z <- cells[[i]][[j]]; b <- z$breaks
+    plot(NA, xlim = z$xlim, ylim = ylim[[j]], xlab = vars[j], ylab = "Density")
+    # the row is named once, over its leftmost panel
+    if (!is.null(labels) && j == 1L)
+      title(main = labels[i], adj = 0, font.main = 1)
+    legend(per(legend.pos, j), legend = legend.text, fill = col, col = col,
+           bty = "n")
+    for (k in 1:2)
+      rect(b[-length(b)], 0, b[-1], z$d[[k]], col = col[k],
+           border = adjustcolor(c(hcol, hcol2)[k], alpha.f = 0.2))
+    box()
+  }
+  invisible(NULL)
+}
+
 run_collection <- function(label, adj_sets) {
   dir.create(RESULTS, showWarnings = FALSE)
   dir.create(PLOTS,   showWarnings = FALSE)
@@ -63,7 +109,7 @@ run_collection <- function(label, adj_sets) {
   outs <- lapply(SPECS, function(s) {
     cat("\n================ ", label, ", ", s$label,
         " ================\n", sep = "")
-    o <- specification_robust_protect(
+    o <- specrobust(
       response = response, treatment = treatment,
       covariates = df[, unique(unlist(adj_sets))],
       adj_sets = adj_sets, protect_vars = s$vars, protect_fun = s$fun,
@@ -75,9 +121,9 @@ run_collection <- function(label, adj_sets) {
 
   f <- file.path(PLOTS, sprintf("401k_protect_%s_weights.pdf", label))
   pdf(f, width = 12, height = 3.9 * length(outs))
-  plot_hists(df, lapply(outs, `[[`, "weights"), vars = VARS,
-             labels = vapply(SPECS, `[[`, character(1), "label"),
-             breaks = BINS, legend.pos = LEG)
+  stack_weight_grid(df, lapply(outs, `[[`, "weights"), vars = VARS,
+                    labels = vapply(SPECS, `[[`, character(1), "label"),
+                    breaks = BINS, legend.pos = LEG)
   invisible(dev.off())
   cat("Wrote ", f, "\n", sep = "")
   outs
@@ -93,7 +139,7 @@ for (nm in names(fits)) for (i in seq_along(SPECS)) {
   o <- fits[[nm]][[i]]
   cat(sprintf("%-6s %-34s %9.4f %8.4f  [%8.4f, %8.4f] %10.1f%%\n",
               nm, SPECS[[i]]$label, o$estimate, o$se, o$ci[1], o$ci[2],
-              100 * (1 - diff(o$ci)/diff(o$convex_hull_ci))))
+              100 * (1 - diff(o$ci)/diff(o$hull_ci))))
 }
 
 cat("\n---- the protected moments ----\n")
