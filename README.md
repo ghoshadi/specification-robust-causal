@@ -13,8 +13,8 @@ Example usage:
 
 ```R
 library(specrobust)
-set.seed(123)
-n = 500
+set.seed(42)
+n = 5000
 X1 = rnorm(n); X2 = rnorm(n)
 A = as.numeric(runif(n) <= 1/(exp(5*X1 + 5*X2) + 1))
 Y = A * (1 + X1 - 5*X2) + 4*X2 + rnorm(n)
@@ -30,7 +30,7 @@ treatment-covariate interactions instead and bootstraps the standard errors:
 
 ```R
 out_lm = specrobust(Y, A, data.frame(X1, X2), list("X1", c("X1", "X2")),
-                    reg_mode = "lm", n_boot = 200)
+                    reg_mode = "lm", n_boot = 1000)
 ```
 
 Any variable in the intersection of the adjustment sets, or any known function
