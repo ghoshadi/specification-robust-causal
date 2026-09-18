@@ -15,10 +15,11 @@ Example usage:
 library(specrobust)
 set.seed(42)
 n = 5000
-X1 = rnorm(n); X2 = rnorm(n)
+X1 = rnorm(n); X2 = rnorm(n); X3 = rnorm(n)
 A = as.numeric(runif(n) <= 1/(exp(5*X1 + 5*X2) + 1))
-Y = A * (1 + X1 - 5*X2) + 4*X2 + rnorm(n)
-out = specrobust(Y, A, data.frame(X1, X2), list("X1", c("X1", "X2")))
+Y = A * (1 + X1 - 5*X2 + X3) + 4*X2 + X3 + rnorm(n)
+out = specrobust(Y, A, data.frame(X1, X2, X3),
+                 list(c("X1", "X3"), c("X1", "X2", "X3")))
 print(out)
 plot(out)
 plot(out, type = "weights")
@@ -29,7 +30,8 @@ default. Passing `reg_mode = "lm"` estimates them by linear regression with
 treatment-covariate interactions instead and bootstraps the standard errors:
 
 ```R
-out_lm = specrobust(Y, A, data.frame(X1, X2), list("X1", c("X1", "X2")),
+out_lm = specrobust(Y, A, data.frame(X1, X2, X3),
+                    list(c("X1", "X3"), c("X1", "X2", "X3")),
                     reg_mode = "lm", n_boot = 1000)
 ```
 
@@ -37,8 +39,9 @@ Any variable in the intersection of the adjustment sets, or any known function
 of those variables, can be held fixed under the reweighting:
 
 ```R
-out_prot = specrobust(Y, A, data.frame(X1, X2), list("X1", c("X1", "X2")),
-                      protect_vars = "X1")
+out_prot = specrobust(Y, A, data.frame(X1, X2, X3),
+                      list(c("X1", "X3"), c("X1", "X2", "X3")),
+                      protect_vars = "X3")
 ```
 
 #### References
