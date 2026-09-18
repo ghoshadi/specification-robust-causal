@@ -183,7 +183,10 @@ run_experiment <- function(itr) {
   rewt.ecov = as.numeric(rewt.ci.low <= tauR)*as.numeric(tauR <= rewt.ci.upp)
   rewt.len = as.numeric(rewt.ci.upp-rewt.ci.low)
   
-  return(c(ireg.ecov, naive.ecov, rewt.ecov, ireg.len, naive.len, rewt.len))
+  res <- c(ireg.ecov, naive.ecov, rewt.ecov, ireg.len, naive.len, rewt.len)
+  names(res) <- c(paste0("ireg", seq_along(ireg.ecov), ".ecov"), "naive.ecov", "rewt.ecov",
+                  paste0("ireg", seq_along(ireg.len), ".len"), "naive.len", "rewt.len")
+  return(res)
 }
 
 set.seed(123)
@@ -334,7 +337,10 @@ run_experiment <- function(itr) {
   rewt.ecov = as.numeric(rewt.ci.low <= tauR)*as.numeric(tauR <= rewt.ci.upp)
   rewt.len = as.numeric(rewt.ci.upp-rewt.ci.low)
   
-  return(c(ireg.ecov, naive.ecov, rewt.ecov, ireg.len, naive.len, rewt.len))
+  res <- c(ireg.ecov, naive.ecov, rewt.ecov, ireg.len, naive.len, rewt.len)
+  names(res) <- c(paste0("ireg", seq_along(ireg.ecov), ".ecov"), "naive.ecov", "rewt.ecov",
+                  paste0("ireg", seq_along(ireg.len), ".len"), "naive.len", "rewt.len")
+  return(res)
 }
 
 set.seed(123)
@@ -360,7 +366,7 @@ print(results_matrix, digits = 3)
 #-------------------------------------------------------
 
 results_matrix = matrix(apply(read.csv(file.path(RESULTS,
-                        "Eg1_1000sims_1000boot_legacy.csv")), 2, mean),
+                        "Eg1_1000sims_1000boot.csv")), 2, mean),
                         nrow = 4, byrow = F,
                         dimnames = list(c("C.I. using adj set 1", 
                                           "C.I. using adj set 2", 
@@ -372,7 +378,7 @@ results_matrix = matrix(apply(read.csv(file.path(RESULTS,
 print(results_matrix, digits = 3)
 
 results_matrix = matrix(apply(read.csv(file.path(RESULTS,
-                        "Eg2_1000sims_1000boot_legacy.csv")), 2, mean),
+                        "Eg2_1000sims_1000boot.csv")), 2, mean),
                         nrow = 4, byrow = F,
                         dimnames = list(c("C.I. using adj set 1", 
                                           "C.I. using adj set 2", 
