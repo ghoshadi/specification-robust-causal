@@ -1,32 +1,108 @@
 # ==============================================================================
 # Specification-robust Causal Inference (Ghosh & Rothenhaeusler 2026)
+# Algorithm A.1: specification_robust() of main.R with additional covariate
+# constraints, protecting a known R^d-valued function f of the common
+# covariates X_{S_cap}.  The additions are
 #
-# K candidate adjustment sets S_1, ..., S_K are given, at least one of which
-# satisfies ignorability, but it is not known which.  The population is
-# reweighted, as little as possible in Kullback-Leibler divergence, so that all
-# K candidate estimands agree; the average treatment effect on that reweighted
-# population is then estimated, and reported against the convex hull of the K
-# per-candidate AIPW intervals.
+#   step 5    G -> [g, F] with F = f(X_common) - P_n[f(X_common)], so the tilt
+#             balances the protected moments as well as the disagreements
+#   step 9    the ridge target of the nu system is extended by d zeros
+#   step 10   the bias correction and eta carry the protected term F nu_protect
+#   step 11   the influence function carries -(w - 1) F nu_protect
 #
-#   mu_ak(X_Sk)   = E[Y | A = a, X_Sk]       tau_k = mu_1k - mu_0k
-#   m_k(X_common) = E[tau_k | X_common]      g_k   = m_1 - m_k,  k = 2..K
-#   psi^(k)         the AIPW pseudo-outcome for candidate k
-#   w               the transfer weights, w propto exp(lambda' g)
-#   nu              the K-vector combining candidates, nu' 1 = 1
-#
-# For each evaluation fold o every nuisance is fitted on the complement, so the
-# weight function is independent of the rows it is applied to.  The
-# training-fold g that lambda is solved from therefore uses out-of-bag layer-2
-# predictions, and mean(w g) = 0 holds exactly only on that fold; both
-# residuals are returned, as balance_train_by_fold and balance_by_fold.
+# f is a known function of X_common, so the protected block needs no
+# out-of-bag treatment.  With protect_vars = character(0) and
+# protect_fun = NULL we have d = 0 and the procedure reduces exactly to
+# specification_robust().
 # ==============================================================================
 
 # ===========================================================================
+# Step 5: the protected block  f(X_{S_cap}) - P_n[f(X_{S_cap})]
+# ===========================================================================
 
-specification_robust <- function(response,
+build_protect_block <- function(X, common, protect_vars = character(0),
+                                protect_fun = NULL, orthonormalize = FALSE) {
+  n <- nrow(X)
+  blocks <- list()
+
+  protect_vars <- unique(protect_vars)
+  if (length(protect_vars) > 0) {
+    bad <- setdiff(protect_vars, common)
+    if (length(bad) > 0)
+      stop("Protected variables must lie in the intersection of the adjustment sets: ",
+           paste(bad, collapse = ", "))
+    blocks$vars <- data.matrix(X[, protect_vars, drop = FALSE])
+  }
+  if (!is.null(protect_fun)) {
+    if (!is.function(protect_fun)) stop("protect_fun must be a function.")
+    fx <- as.matrix(protect_fun(X[, common, drop = FALSE]))
+    storage.mode(fx) <- "double"
+    if (nrow(fx) != n)
+      stop("protect_fun must return one row per observation (got ", nrow(fx),
+           ", expected ", n, ").")
+    if (is.null(colnames(fx)))
+      colnames(fx) <- if (ncol(fx) == 1) "f" else paste0("f", seq_len(ncol(fx)))
+    blocks$fun <- fx
+  }
+
+  if (length(blocks) == 0) {
+    empty <- matrix(NA_real_, n, 0)
+    return(list(F = empty, raw = empty, center = numeric(0),
+                names = character(0), d = 0L))
+  }
+
+  f_raw <- do.call(cbind, blocks)
+  storage.mode(f_raw) <- "double"
+  if (anyNA(f_raw)) stop("Protected columns must not contain missing values.")
+  center <- colMeans(f_raw)
+  Fmat <- sweep(f_raw, 2, center, "-")
+
+  if (orthonormalize && ncol(Fmat) > 1) {
+    P <- matrix(0, n, 0); keep <- integer(0)
+    nrm <- function(u) sqrt(mean(u^2))
+    for (j in seq_len(ncol(Fmat))) {
+      v0 <- Fmat[, j] - mean(Fmat[, j]); s0 <- nrm(v0)
+      if (!is.finite(s0) || s0 <= 0) next
+      v <- v0
+      if (ncol(P) > 0) for (pass in 1:2) {
+        v <- as.numeric(v - P %*% (crossprod(P, v) / n)); v <- v - mean(v)
+      }
+      s <- nrm(v)
+      if (is.finite(s) && s > 1e-8 * s0) { P <- cbind(P, v / s); keep <- c(keep, j) }
+    }
+    colnames(P) <- colnames(Fmat)[keep]
+    Fmat <- P
+  }
+
+  list(F = Fmat, raw = f_raw, center = as.numeric(center),
+       names = colnames(Fmat), d = ncol(Fmat))
+}
+
+# ===========================================================================
+# Step 9: the nu system with the protected block
+# ===========================================================================
+
+solve_nu_protected <- function(M, rhs, K, d, nu_regularize = 0.1) {
+  M <- as.matrix(M); p <- ncol(M); rhs <- as.numeric(rhs)
+  if (p == 0) return(numeric(0))
+  target <- c(rep(1/K, K - 1), rep(0, d))
+  if (nu_regularize <= 0) return(safe_qsolve(M, rhs))
+  ridge <- nu_regularize * max(sum(diag(M)) / p, 1e-6)
+  out <- tryCatch(as.numeric(solve(M + diag(ridge, p), rhs + ridge * target)),
+                  error = function(e) NULL)
+  if (is.null(out) || any(!is.finite(out))) out <- target
+  out
+}
+
+# ===========================================================================
+
+specification_robust_protect <- function(response,
                                  treatment,
                                  covariates,
                                  adj_sets,
+                                 protect_vars     = character(0),
+                                 protect_fun      = NULL,
+                                 protect_orthonormalize = FALSE,
                                  ref_index        = 1L,
                                  verbose          = TRUE,
                                  alpha            = 0.05,
@@ -72,21 +148,28 @@ specification_robust <- function(response,
   g_learner <- layer2_learners(seed = seed, num.trees = num_trees)
 
   n <- length(y); common <- Reduce(intersect, adj_sets)
+
+  Fb <- build_protect_block(X, common, protect_vars, protect_fun,
+                            orthonormalize = protect_orthonormalize)
+  pd <- Fb$d                       # protected dimension
   fold_id <- make_folds(n, num_folds, seed)
   cycles <- cbind(eval_fold = seq_len(num_folds),
                   n_eval  = as.integer(table(factor(fold_id, seq_len(num_folds)))),
                   n_train = n - as.integer(table(factor(fold_id, seq_len(num_folds)))))
 
   if (verbose)
-    cat(sprintf("K=%d  common={%s}  n=%d\n  %d folds  trees=%d\n\n",
-        K, paste(common, collapse = ", "), n, num_folds, num_trees))
+    cat(sprintf("K=%d  common={%s}  n=%d\n  %d folds  trees=%d  protected={%s} d=%d\n\n",
+        K, paste(common, collapse = ", "), n, num_folds, num_trees,
+        if (pd == 0) "none" else paste(Fb$names, collapse = ", "), pd))
 
   FD <- vector("list", num_folds); nu_sys <- vector("list", num_folds)
   aipw_oof <- tau_hat_oof <- matrix(NA_real_, n, K)
-  g_hat_oof <- matrix(NA_real_, n, K - 1)
+  g_hat_oof <- matrix(NA_real_, n, K - 1 + pd)
   m1_oof <- weights_oof <- w_raw_oof <- eta_oof <- psi_oof <- bc_oof <- rep(NA_real_, n)
-  lambda_by_fold <- matrix(NA_real_, num_folds, K - 1)
-  balance_by_fold <- balance_train_by_fold <- matrix(NA_real_, num_folds, K - 1)
+  lambda_by_fold <- matrix(NA_real_, num_folds, K - 1 + pd)
+  balance_by_fold <- balance_train_by_fold <-
+    matrix(NA_real_, num_folds, K - 1 + pd)
+  nu_protect_by_fold <- matrix(NA_real_, num_folds, pd)
   nu_by_fold <- reweighted_by_fold <- matrix(NA_real_, num_folds, K)
   fold_estimate <- fold_se <- fold_ess <- rep(NA_real_, num_folds)
 
@@ -158,6 +241,12 @@ specification_robust <- function(response,
     G_ev <- do.call(cbind, lapply(2:K, function(k) m_ev[, 1] - m_ev[, k]))
     G_tr <- do.call(cbind, lapply(2:K, function(k) m_tr[, 1] - m_tr[, k]))
 
+    F_ev  <- Fb$F[EV, , drop = FALSE]
+    F_tr  <- Fb$F[TR, , drop = FALSE]
+    Gd_ev <- G_ev
+    G_ev  <- cbind(G_ev, F_ev)
+    G_tr  <- cbind(G_tr, F_tr)
+
     G_fit <- G_tr
     w_obj <- solve_lam(as.matrix(G_fit))
     lam   <- as.numeric(w_obj$lambda)
@@ -182,19 +271,23 @@ specification_robust <- function(response,
     ess_used <- sum(w)^2/sum(w^2)
     psi_ev <- psi_ev[keep, , drop = FALSE]; tau_ev <- tau_ev[keep, , drop = FALSE]
     m_ev   <- m_ev[keep, , drop = FALSE];   G_ev   <- G_ev[keep, , drop = FALSE]
+    Gd_ev  <- Gd_ev[keep, , drop = FALSE];  F_ev   <- F_ev[keep, , drop = FALSE]
     w_raw  <- w_raw_full[keep]; n_ev <- length(keep)
 
     tau_R1 <- mean(w * psi_ev[, 1])
     M   <- crossprod(G_ev, G_ev * w)/n_ev
     rhs <- colMeans(w * G_ev * (m_ev[, 1] - tau_R1))
-    nu2 <- solve_nu(M, rhs, K, nu_regularize)
+    nu_all <- solve_nu_protected(M, rhs, K, pd, nu_regularize)
+    nu2 <- nu_all[seq_len(K - 1)]
+    nu_protect <- if (pd > 0) nu_all[K - 1 + seq_len(pd)] else numeric(0)
     nu  <- c(1 - sum(nu2), nu2)
+    protect_ev <- if (pd > 0) drop(F_ev %*% nu_protect) else rep(0, n_ev)
     nu_sys[[o]] <- list(nu = nu, M = M, rhs = rhs, tau_R1 = tau_R1, n = n_ev)
 
     m_nu  <- drop(m_ev %*% nu)
-    phi   <- m_nu - tau_R1
+    phi   <- m_nu - tau_R1 - protect_ev
     dpsi  <- do.call(cbind, lapply(2:K, function(k) psi_ev[, 1] - psi_ev[, k]))
-    R     <- drop((dpsi - G_ev) %*% lam)
+    R     <- drop((dpsi - Gd_ev) %*% lam[seq_len(K - 1)])
     if (bias_corr) {
       bc    <- w * R * phi
       bc_if <- w * R
@@ -202,16 +295,17 @@ specification_robust <- function(response,
       bc    <- rep(0, n_ev)
       bc_if <- rep(0, n_ev)
     }
-    eta   <- w * drop(psi_ev %*% nu) + bc
+    eta   <- w * (drop(psi_ev %*% nu) - protect_ev) + bc
     est   <- mean(eta)
-    if_bc <- bc_if * (m_nu - est)
-    psi_i <- w * (drop(psi_ev %*% nu) - est) + if_bc
+    if_bc <- bc_if * (m_nu - protect_ev - est)
+    psi_i <- w * (drop(psi_ev %*% nu) - est) - (w - 1) * protect_ev + if_bc
 
     ev <- EV[keep]
     weights_oof[ev] <- w
     w_raw_oof[EV] <- w_raw_full
     eta_oof[ev] <- eta; psi_oof[ev] <- psi_i; bc_oof[ev] <- bc
     lambda_by_fold[o, ] <- lam; nu_by_fold[o, ] <- nu
+    if (pd > 0) nu_protect_by_fold[o, ] <- nu_protect
     balance_by_fold[o, ] <- bal_ev; balance_train_by_fold[o, ] <- bal_tr
     reweighted_by_fold[o, ] <- colMeans(w * psi_ev)
     fold_estimate[o] <- est
@@ -229,7 +323,9 @@ specification_robust <- function(response,
       mom_ev    = bal_ev,          # the held-out residual, the honest number
       G_tr = G_tr, w_tr = w_tr,
       e_diag  = do.call(rbind, ED),
-      nu = nu, phi = phi, R = R, bc = bc, eta = eta, psi_if = psi_i,
+      nu = nu, nu_protect = nu_protect, protect_ev = protect_ev,
+      F_ev = F_ev, Gd_ev = Gd_ev,
+      phi = phi, R = R, bc = bc, eta = eta, psi_if = psi_i,
       tau_R1 = tau_R1)
 
     if (verbose) {
@@ -241,6 +337,8 @@ specification_robust <- function(response,
       cat(sprintf("  balance: %.2e on the fold lambda came from, %.2e on this one\n",
                   max(abs(bal_tr)), max(abs(bal_ev))))
       cat("  nu     :", paste(sprintf("%8.4f", nu), collapse = " "), "\n")
+      if (pd > 0)
+        cat("  nu_prot:", paste(sprintf("%8.4f", nu_protect), collapse = " "), "\n")
       cat(sprintf("  cond(M) %.1f   fold est %.4f   fold s.e. %.4f   ESS %.0f/%d\n\n",
                   max(ef)/min(ef), est, fold_se[o], ess_used, n_ev))
     }
@@ -261,7 +359,23 @@ specification_robust <- function(response,
 
   colnames(tau_hat_oof) <- paste0("tau_hat_", seq_len(K))
   colnames(aipw_oof) <- paste0("aipw_", seq_len(K))
-  colnames(g_hat_oof) <- paste0("g_", 2:K)
+  colnames(g_hat_oof) <- c(paste0("g_", 2:K),
+    if (pd > 0) paste0("protect_", Fb$names) else character(0))
+
+  # What the protection achieved: P_n[w f_j] against P_n[f_j], in sd(f_j).
+  # The weights here are the fitted weight function before the trim, which is
+  # what the tilt balanced; the trim is a separate, later choice.
+  protected_summary <- data.frame()
+  if (pd > 0) {
+    wok <- !is.na(w_raw_oof)
+    fw  <- as.numeric(colSums(w_raw_oof[wok] * Fb$raw[wok, , drop = FALSE]) /
+                      sum(w_raw_oof[wok]))
+    fsd <- apply(Fb$raw, 2, stats::sd); fsd[!is.finite(fsd) | fsd <= 0] <- 1
+    protected_summary <- data.frame(
+      variable = colnames(Fb$raw), original_mean = Fb$center,
+      weighted_mean = fw, std_difference = (fw - Fb$center)/fsd,
+      row.names = NULL)
+  }
 
   if (verbose) {
     cat("================ FINAL SUMMARY ================\n")
@@ -278,6 +392,13 @@ specification_robust <- function(response,
     cat("Spec-robust CI      : [", round(ci[1], 4), ", ", round(ci[2], 4),
         "]  (width = ", round(diff(ci), 4), ")\n", sep = "")
     cat(sprintf("Width reduction     : %.1f%%\n", 100*(1 - diff(ci)/diff(convex_hull))))
+    if (pd > 0) {
+      cat("---- protected moments (weighted mean vs original) ----\n")
+      for (j in seq_len(nrow(protected_summary)))
+        cat(sprintf("  %-18s %10.4f -> %10.4f   (%+.2e sd)\n",
+            protected_summary$variable[j], protected_summary$original_mean[j],
+            protected_summary$weighted_mean[j], protected_summary$std_difference[j]))
+    }
     cat("================================================\n")
   }
 
@@ -288,6 +409,8 @@ specification_robust <- function(response,
     nu = nu_effective, nu_by_fold = nu_by_fold, lambda_by_fold = lambda_by_fold,
     balance_by_fold = balance_by_fold,
     balance_train_by_fold = balance_train_by_fold,
+    nu_protect_by_fold = nu_protect_by_fold, protected_summary = protected_summary,
+    protect_names = Fb$names, protect_d = pd,
     reweighted_by_fold = reweighted_by_fold,
     fold_estimate = fold_estimate, fold_se = fold_se, fold_ess = fold_ess,
     weights = weights_oof, weights_raw = w_raw_oof,
@@ -300,12 +423,14 @@ specification_robust <- function(response,
       seed = seed,
       propensity_clip = propensity_clip, num_trees = num_trees,
       nu_regularize = nu_regularize, bias_corr = bias_corr,
-      aipw_trim = aipw_trim, weight_trim = weight_trim))
+      aipw_trim = aipw_trim, weight_trim = weight_trim,
+      protect_vars = protect_vars, protect_d = pd,
+      protect_orthonormalize = protect_orthonormalize))
 
   if (return_full) out$full <- list(
     folds = FD, nu_sys = nu_sys, cycles = cycles, K = K,
     tau_hat_oof = tau_hat_oof, aipw_oof = aipw_oof, g_hat_oof = g_hat_oof,
-    m1_oof = m1_oof, w_raw_oof = w_raw_oof, eta_oof = eta_oof,
+    m1_oof = m1_oof, w_raw_oof = w_raw_oof, eta_oof = eta_oof, Fb = Fb,
     psi_oof = psi_oof, bc_oof = bc_oof)
   out
 }

@@ -1,15 +1,65 @@
 # ==============================================================================
 # Specification-robust Causal Inference (Ghosh & Rothenhaeusler 2026)
-# This contains all simulations used in the main paper.
+# This contains all simulations used in the main paper.  Run from the folder
+# above simulations:
+#   Rscript simulations/simulations.R
+# The per-replication results are written to simulations/.
+#
+# The contrasts here come from interacted linear regression, not from the
+# cross-fitted forests of main.R; the only piece of the shared code this needs
+# is solve_lam() in utils.R, so specification_robust_lm() is defined below.
 # ==============================================================================
 
 rm(list=ls())
 source('./utils.R')
-source('./main.R')
+
+RESULTS <- "simulations"
 
 n_samples <- 1000; n_boot <- 100; n_sims <- 100
-n_cores = detectCores()
+n_cores = parallel::detectCores()
 alpha = 0.05; z = qnorm(alpha/2, lower.tail = F)
+
+# ===========================================================================
+# Specification-robust inference on the ATE using linear models
+# ===========================================================================
+
+specification_robust_lm <- function(response, treatment, covariates, adj_sets, verbose = FALSE) {
+  k <- length(adj_sets)
+  fits <- lapply(adj_sets, function(adj) {
+    formula <- as.formula(paste("response ~ treatment * (", 
+                                paste(adj, collapse = " + "), ")"))
+    if(length(adj)==1){
+      df <- data.frame(response, treatment, covariates[,adj]); names(df)[3] = adj
+      lm(formula, data = df)
+    } else{
+      lm(formula, data = data.frame(cbind(response, treatment, covariates[, adj])))
+    }
+  })
+  
+  int_adj <- Reduce(intersect, adj_sets)
+  data_for_pred_0 <- data.frame(treatment = rep(0, nrow(covariates)), covariates)
+  data_for_pred_1 <- data.frame(treatment = rep(1, nrow(covariates)), covariates)
+  common_covariates <- as.data.frame(covariates[, int_adj, drop = FALSE])
+  
+  g <- lapply(seq_len(k), function(i) {
+    pred_treat_0 <- predict(fits[[i]], newdata = data_for_pred_0)
+    pred_treat_1 <- predict(fits[[i]], newdata = data_for_pred_1)
+    cate <- pred_treat_1 - pred_treat_0
+    lm(cate ~ ., data = common_covariates)$fitted.values
+  })
+  
+  Delta_g <- do.call(cbind, lapply(seq_len(k)[-1], function(i) g[[1]] - g[[i]]))
+  out <- solve_lam(Delta_g)
+  if (verbose) print(paste0("lambda_hat: ",round(out$lambda, 3)))
+  
+  rewt_est <- sapply(g, function(gi) mean(out$weights * gi))
+  theta_hats <- sapply(fits, function(fit) coef(fit)["treatment"])
+  
+  list(rewt.estimates = rewt_est, 
+       ireg.estimates = theta_hats, 
+       weights = out$weights, 
+       lambda = out$lambda)
+}
 
 ##-------------------------------------------------------
 ## Example: Two confounders
@@ -44,7 +94,7 @@ bootstrap_specification_robust_lm <- function(iter) {
   result <- specification_robust_lm(Y_boot, A_boot, X_boot, list(c("X1"), c("X1","X2")))
   return(list(rewt = result$rewt.estimates, ireg = result$ireg.estimates))
 }
-boot_results <- pbmclapply(1:n_boot, bootstrap_specification_robust_lm, mc.cores = n_cores)
+boot_results <- pbmcapply::pbmclapply(1:n_boot, bootstrap_specification_robust_lm, mc.cores = n_cores)
 rewt.estimates <- do.call(rbind, lapply(boot_results, function(x) x$rewt))
 rewt_se <- mean(apply(rewt.estimates, 2, sd)) 
 
@@ -86,10 +136,7 @@ ci_naive = range(c(ci_1,ci_2))
 out = specification_robust_lm(Y, A, data.frame(X1, X2), list(c("X1"),c("X1","X2")), verbose = T)
 
 # Plotting the histograms
-compare_hists_overlay(X1, out$weights, xlab = "X1", draw.curve = T,
-                      xlim = c(-4.5,4.8), ylim = c(0, 0.45), breaks = 200)
-compare_hists_overlay(X2, out$weights, xlab = "X2", draw.curve = T,
-                      xlim = c(-5,5), ylim = c(0, 0.45), breaks = 200)
+plot_hists(data.frame(X1, X2), out$weights, vars = c("X1", "X2"), breaks = 200)
 
 #-------------------------------------------------------
 # Empirical coverage and average lenght of CIs
@@ -114,7 +161,7 @@ run_experiment <- function(itr) {
     result <- specification_robust_lm(Y_boot, A_boot, X_boot, list(c("X1"), c("X1", "X2")))
     return(list(rewt = result$rewt.estimates, ireg = result$ireg.estimates))
   }
-  boot_results <- mclapply(1:n_boot, bootstrap_specification_robust_lm, mc.cores = n_cores)
+  boot_results <- parallel::mclapply(1:n_boot, bootstrap_specification_robust_lm, mc.cores = n_cores)
   rewt.estimates <- do.call(rbind, lapply(boot_results, function(x) x$rewt))
   ireg_estimates <- do.call(rbind, lapply(boot_results, function(x) x$ireg))
   
@@ -140,10 +187,12 @@ run_experiment <- function(itr) {
 }
 
 set.seed(123)
-results <- pblapply(1:n_sims, run_experiment)
-write.csv(do.call(rbind, results), paste0("Eg1_",n_sims,"sims_",n_boot,"boot.csv"), row.names = F)
+results <- pbapply::pblapply(1:n_sims, run_experiment)
+write.csv(do.call(rbind, results),
+          file.path(RESULTS, paste0("Eg1_",n_sims,"sims_",n_boot,"boot.csv")), row.names = F)
 
-results_matrix = matrix(apply(read.csv(paste0("Eg1_",n_sims,"sims_",n_boot,"boot.csv")), 2, mean), 
+results_matrix = matrix(apply(read.csv(file.path(RESULTS,
+                        paste0("Eg1_",n_sims,"sims_",n_boot,"boot.csv"))), 2, mean),
                         nrow = 4, byrow = F,
                         dimnames = list(c("C.I. using adj set 1", 
                                           "C.I. using adj set 2", 
@@ -190,7 +239,7 @@ bootstrap_specification_robust_lm <- function(iter) {
   result <- specification_robust_lm(Y_boot, A_boot, X_boot, list(c("X1"), c("X1","X2")))
   return(list(rewt = result$rewt.estimates, ireg = result$ireg.estimates))
 }
-boot_results <- pbmclapply(1:n_boot, bootstrap_specification_robust_lm, mc.cores = n_cores)
+boot_results <- pbmcapply::pbmclapply(1:n_boot, bootstrap_specification_robust_lm, mc.cores = n_cores)
 rewt.estimates <- do.call(rbind, lapply(boot_results, function(x) x$rewt))
 rewt_se <- mean(apply(rewt.estimates, 2, sd)) 
 
@@ -235,10 +284,7 @@ ci_naive = range(c(ci_1,ci_2))
 out = specification_robust_lm(Y, A, data.frame(X1, X2), list(c("X1"),c("X1","X2")), verbose = T)
 
 # Plotting the histograms
-compare_hists_overlay(X1, out$weights, xlab = "X1", draw.curve = T,
-                      xlim = c(-4.5,4.8), ylim = c(0, 0.45), breaks = 200)
-compare_hists_overlay(X2, out$weights, xlab = "X2", draw.curve = T,
-                      xlim = c(-5,5), ylim = c(0, 0.45), breaks = 200)
+plot_hists(data.frame(X1, X2), out$weights, vars = c("X1", "X2"), breaks = 200)
 
 #-------------------------------------------------------
 # Empirical coverage and average lenght of CIs
@@ -266,7 +312,7 @@ run_experiment <- function(itr) {
     result <- specification_robust_lm(Y_boot, A_boot, X_boot, list(c("X1"), c("X1", "X2")))
     return(list(rewt = result$rewt.estimates, ireg = result$ireg.estimates))
   }
-  boot_results <- mclapply(1:n_boot, bootstrap_specification_robust_lm, mc.cores = n_cores)
+  boot_results <- parallel::mclapply(1:n_boot, bootstrap_specification_robust_lm, mc.cores = n_cores)
   rewt.estimates <- do.call(rbind, lapply(boot_results, function(x) x$rewt))
   ireg_estimates <- do.call(rbind, lapply(boot_results, function(x) x$ireg))
   
@@ -292,10 +338,12 @@ run_experiment <- function(itr) {
 }
 
 set.seed(123)
-results <- pblapply(1:n_sims, run_experiment)
-write.csv(do.call(rbind, results), paste0("Eg2_",n_sims,"sims_",n_boot,"boot.csv"), row.names = F)
+results <- pbapply::pblapply(1:n_sims, run_experiment)
+write.csv(do.call(rbind, results),
+          file.path(RESULTS, paste0("Eg2_",n_sims,"sims_",n_boot,"boot.csv")), row.names = F)
 
-results_matrix = matrix(apply(read.csv(paste0("Eg2_",n_sims,"sims_",n_boot,"boot.csv")), 2, mean), 
+results_matrix = matrix(apply(read.csv(file.path(RESULTS,
+                        paste0("Eg2_",n_sims,"sims_",n_boot,"boot.csv"))), 2, mean),
                         nrow = 4, byrow = F,
                         dimnames = list(c("C.I. using adj set 1", 
                                           "C.I. using adj set 2", 
@@ -311,7 +359,8 @@ print(results_matrix, digits = 3)
 # n_sims = 1000; n_boot = 1000
 #-------------------------------------------------------
 
-results_matrix = matrix(apply(read.csv(paste0("Eg1_1000sims_1000boot.csv")), 2, mean), 
+results_matrix = matrix(apply(read.csv(file.path(RESULTS,
+                        "Eg1_1000sims_1000boot_legacy.csv")), 2, mean),
                         nrow = 4, byrow = F,
                         dimnames = list(c("C.I. using adj set 1", 
                                           "C.I. using adj set 2", 
@@ -322,7 +371,8 @@ results_matrix = matrix(apply(read.csv(paste0("Eg1_1000sims_1000boot.csv")), 2, 
 )
 print(results_matrix, digits = 3)
 
-results_matrix = matrix(apply(read.csv(paste0("Eg2_1000sims_1000boot.csv")), 2, mean), 
+results_matrix = matrix(apply(read.csv(file.path(RESULTS,
+                        "Eg2_1000sims_1000boot_legacy.csv")), 2, mean),
                         nrow = 4, byrow = F,
                         dimnames = list(c("C.I. using adj set 1", 
                                           "C.I. using adj set 2", 

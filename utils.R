@@ -1,107 +1,55 @@
 # ==============================================================================
 # Specification-robust Causal Inference (Ghosh & Rothenhaeusler 2026)
-# This contains all helper functions used in the main file/examples.
+# Helper functions for main.R, protect_covariates.R and the examples.
+#
+# No package is attached; contributed functions are called with their
+# namespace, so grf, MASS and withr need only be installed.
 # ==============================================================================
+plot_hists <- function(data, weights, vars, labels = NULL, breaks = 25,
+                       legend.pos = "topleft", hcol = "orange",
+                       hcol2 = "skyblue2",
+                       legend.text = c("original population",
+                                       "new target population")) {
+  if (!is.list(weights)) weights <- list(weights)
+  nr <- length(weights); nc <- length(vars)
+  per <- function(a, j) if (length(a) == 1L) a[[1L]] else a[[j]]
 
-suppressPackageStartupMessages({
-  library(ranger)
-  library(grf)
-  library(dplyr)
-  library(plotrix)
-  library(parallel)
-  library(pbapply)
-  library(pbmcapply)
-  library(foreign)
-  library(MASS)
-})
-
-# ===========================================================================
-# Plots: Function for comparing histograms side by side
-# ===========================================================================
-
-compare_hists <- function(data, weights, breaks = 20, 
-                          hcol = "orange", hcol2 = "skyblue2", 
-                          xlab = NULL, xlim = NULL,
-                          mainOG = "Original population", 
-                          mainAR = "New target population", 
-                          align = "vertical") {
-  if(is.null(xlim)) xlim <- range(data)
-  if(align == "vertical"){
-    par(mar = c(5, 5, 4, 2) + 0.1)
-    par(oma = rep(0.1, 4)) #margins below, left, top, right 
-  }  
-  else{
-    par(mar = c(5, 5, 4, 2) + 0.1)
-    par(oma = rep(0.1, 4))
-  } 
-  hist(data, breaks = breaks, col = hcol, main = mainOG, xlim = xlim, 
-       xlab = xlab, ylab = "Frequency")
-  box()
-  hist_data <- hist(data, breaks = breaks, plot = FALSE)
-  counts <- hist_data$counts
-  breaks <- hist_data$breaks
-  midpoints <- hist_data$mids
-  weighted_counts <- sapply(seq_along(counts), function(i) {
-    idx <- which(data >= breaks[i] & data < breaks[i + 1])
-    sum(weights[idx])
-  })
-  plot(midpoints, weighted_counts, type = "n", main = mainAR, 
-       xlab = xlab, ylab = "Frequency", xlim = xlim)
-  rect(breaks[-length(breaks)], 0, breaks[-1], weighted_counts, col = hcol2)
-}
-
-# ===========================================================================
-# Plots: Function for comparing histograms overlay (as in the paper)
-# ===========================================================================
-
-compare_hists_overlay <- function(data, weights, breaks = 25, 
-                                  hcol = "orange", 
-                                  hcol2 = "skyblue2", 
-                                  xlim = NULL, ylim = NULL,
-                                  xlab = NULL, main = NULL,
-                                  legend.text = c("original population", 
-                                                  "new target population"),
-                                  legend.pos = "topleft",
-                                  draw.curve = F) {
-  h1 <- hist(data, breaks = breaks, plot = FALSE)
-  bin_widths <- diff(h1$breaks)
-  h1_density <- h1$counts / sum(h1$counts) / bin_widths
-  
-  weighted_counts <- sapply(seq_along(h1$counts), function(i) {
-    idx <- which(data >= h1$breaks[i] & data < h1$breaks[i + 1])
-    sum(weights[idx])
-  })
-  
-  weighted_density <- weighted_counts / sum(weights) / bin_widths
-  if(is.null(xlim)) xlim <- range(data)
-  if(is.null(ylim)) ylim <- range(c(h1_density, weighted_density))
-  
-  plot(h1$mids, h1_density, type = "n", 
-       xlim = xlim, ylim = ylim, 
-       xlab = xlab, ylab = "Density", 
-       main = main)
-  legend(legend.pos, legend = legend.text, 
-         fill = c(adjustcolor(hcol, alpha.f = 0.6), 
-                  adjustcolor(hcol2, alpha.f = 0.6)), 
-         col = c(adjustcolor(hcol, alpha.f = 0.6), 
-                 adjustcolor(hcol2, alpha.f = 0.6)), 
-         bty = "n", cex = 1)
-  rect(h1$breaks[-length(h1$breaks)], 0, 
-       h1$breaks[-1], h1_density, 
-       col = adjustcolor(hcol, alpha.f = 0.6), 
-       border = adjustcolor(hcol, alpha.f = 0.2))
-  rect(h1$breaks[-length(h1$breaks)], 0, 
-       h1$breaks[-1], weighted_density, 
-       col = adjustcolor(hcol2, alpha.f = 0.6), 
-       border = adjustcolor(hcol2, alpha.f = 0.2))
-  if(draw.curve == T){
-    k <- 5
-    h1_density_smooth <- stats::filter(h1_density, rep(1/k, k), sides = 2)
-    weighted_density_smooth <- stats::filter(weighted_density, rep(1/k, k), sides = 2)
-    lines(h1$mids, h1_density_smooth+5e-4, col = hcol, lwd = 3)
-    lines(h1$mids, weighted_density_smooth+5e-4, col = hcol2, lwd = 3)
+  cell <- function(i, j) {
+    w <- weights[[i]]; ok <- !is.na(w)
+    x <- data[[vars[j]]][ok]; w <- w[ok]
+    b <- per(breaks, j)
+    if (identical(b, "unit"))
+      b <- seq(floor(min(x)) - 0.5, ceiling(max(x)) + 0.5, by = 1)
+    h  <- hist(x, breaks = b, plot = FALSE)
+    bw <- diff(h$breaks)
+    wc <- as.numeric(tapply(w, cut(x, h$breaks, include.lowest = TRUE), sum))
+    wc[is.na(wc)] <- 0
+    list(breaks = h$breaks, xlim = range(x),
+         d = list(h$counts/sum(h$counts)/bw, wc/sum(w)/bw))
   }
-  box()
+  cells <- lapply(seq_len(nr), function(i)
+    lapply(seq_len(nc), function(j) cell(i, j)))
+  ylim <- lapply(seq_len(nc), function(j)
+    range(unlist(lapply(cells, function(row) row[[j]]$d))))
+
+  op <- par(mfrow = c(nr, nc), mar = c(4.0, 4.2, 2.4, 0.8),
+            mgp = c(2.3, 0.8, 0))
+  on.exit(par(op))
+  col <- adjustcolor(c(hcol, hcol2), alpha.f = 0.6)
+  for (i in seq_len(nr)) for (j in seq_len(nc)) {
+    z <- cells[[i]][[j]]; b <- z$breaks
+    plot(NA, xlim = z$xlim, ylim = ylim[[j]], xlab = vars[j], ylab = "Density")
+    # the row is named once, over its leftmost panel
+    if (!is.null(labels) && j == 1L)
+      title(main = labels[i], adj = 0, font.main = 1)
+    legend(per(legend.pos, j), legend = legend.text, fill = col, col = col,
+           bty = "n")
+    for (k in 1:2)
+      rect(b[-length(b)], 0, b[-1], z$d[[k]], col = col[k],
+           border = adjustcolor(c(hcol, hcol2)[k], alpha.f = 0.2))
+    box()
+  }
+  invisible(NULL)
 }
 
 # ===========================================================================
@@ -113,7 +61,7 @@ get_ci_from_ests <- function(tau.hat, tau.se, alpha = 0.05) {
   c(tau.hat - z * tau.se, tau.hat + z * tau.se)
 }
 
-to_mm <- function(df) {
+model_mat_grf <- function(df) {
   mm <- stats::model.matrix(~ . - 1, data = as.data.frame(df))
   storage.mode(mm) <- "double"
   mm
@@ -130,11 +78,6 @@ prep_covariates <- function(covariates) {
     }
   }
   X
-}
-
-make_folds_3 <- function(n, seed = 123) {
-  set.seed(seed)
-  sample(rep(1:3, length.out = n), size = n, replace = FALSE)
 }
 
 validate_inputs <- function(response, treatment, covariates, adj_sets) {
@@ -155,69 +98,13 @@ validate_inputs <- function(response, treatment, covariates, adj_sets) {
 
 clip01 <- function(p, eps = 1e-2) pmin(pmax(as.numeric(p), eps), 1 - eps)
 
-# Truncate weights at quantile q, renormalise to mean 1.
-truncate_weights <- function(w, q = 0.99) {
-  cap <- quantile(w, q); w <- pmin(w, cap)
-  w <- w / mean(w)
-  ess <- sum(w)^2 / sum(w^2)
-  list(w = w, ess = ess)
-}
-
-# Winsorise a vector at symmetric quantiles
-winsorise <- function(x, q = 0.995) {
-  lo <- quantile(x, 1 - q); hi <- quantile(x, q)
-  pmin(pmax(x, lo), hi)
-}
-
 # ===========================================================================
 # Main nuisance learners (mu_a, propensity) using grf
 # ===========================================================================
 
-make_learners <- function(num.trees = 400, seed = 123) {
-  list(
-    fit_outcome = function(x, y)
-      regression_forest(to_mm(x), y, num.trees = num.trees, seed = seed),
-    predict_outcome = function(fit, x)
-      as.numeric(predict(fit, to_mm(x))$predictions),
-    fit_propensity = function(x, a)
-      probability_forest(to_mm(x), factor(a, levels = c(0, 1)),
-                         num.trees = num.trees, seed = seed),
-    predict_propensity = function(fit, x) {
-      pred <- predict(fit, to_mm(x))$predictions
-      clip01(if (is.matrix(pred)) as.numeric(pred[, ncol(pred)]) else as.numeric(pred))
-    }
-  )
-}
-
 # ===========================================================================
 # g/m learner functions (m_k=E[tau(X_{S_k}) | X_common], g_k = m_1 - m_k)
 # ===========================================================================
-
-make_g_learners_grf <- function(num.trees = 400, seed = 123) {
-  list(
-    fit = function(x, y) regression_forest(to_mm(x), y, num.trees = num.trees, seed = seed),
-    predict = function(fit, x) as.numeric(predict(fit, to_mm(x))$predictions)
-  )
-}
-
-make_g_learners_ranger <- function(num.trees = 400, seed = 123) {
-  if (!requireNamespace("ranger", quietly = TRUE)) stop("ranger not installed")
-  list(
-    fit = function(x, y) {
-      df <- data.frame(y = y, x)
-      ranger::ranger(y ~ ., data = df, num.trees = num.trees,
-                     respect.unordered.factors = "partition", seed = seed)
-    },
-    predict = function(fit, x) as.numeric(predict(fit, data = as.data.frame(x))$predictions)
-  )
-}
-
-make_g_learners_lm <- function() {
-  list(
-    fit = function(x, y) lm(y ~ ., data = data.frame(y = y, x)),
-    predict = function(fit, x) as.numeric(predict(fit, newdata = as.data.frame(x)))
-  )
-}
 
 # ===========================================================================
 # Helpers for the affine weights (nu)
@@ -233,11 +120,6 @@ safe_qsolve <- function(M, b, ridge = 1e-8) {
   out
 }
 
-# Regularized solve for nu_{2:K}, shrinking toward equal weights (1/K).
-#   (M + ridge*I)^{-1} (rhs + ridge*target)
-# Adaptive ridge = nu_regularize * max(trace(M)/(K-1), floor).
-# When g has signal: ridge << diag(M), so nearly unbiased.
-# When g ~ 0: ridge dominates, nu -> 1/K (equal weights).
 solve_nu <- function(M, rhs, K, nu_regularize = 0.1) {
   M <- as.matrix(M); d <- ncol(M); rhs <- as.numeric(rhs)
   if (d == 0) return(numeric(0))
@@ -249,4 +131,60 @@ solve_nu <- function(M, rhs, K, nu_regularize = 0.1) {
   out <- tryCatch(as.numeric(solve(M_reg, rhs_reg)), error = function(e) NULL)
   if (is.null(out) || any(!is.finite(out))) out <- target
   out
+}
+
+# ===========================================================================
+# Exponential tilting for the transfer weights
+# ===========================================================================
+# Exponential tilting: argmin_lambda mean(exp(G %*% lambda))
+solve_lam <- function(G, reltol = 1e-10, maxit = 5000) {
+  G <- as.matrix(G)
+  if (!is.numeric(G)) storage.mode(G) <- "double"
+  p <- ncol(G)
+  if (p == 0) return(list(lambda = numeric(0), weights = rep(1, nrow(G)), convergence = 0))
+  sc <- apply(G, 2, stats::sd); sc[!is.finite(sc) | sc <= 0] <- 1
+  Gs <- sweep(G, 2, sc, "/")
+  obj <- function(par) { eta <- drop(Gs %*% par); m <- max(eta); mean(exp(eta - m)) * exp(m) }
+  gr  <- function(par) { eta <- drop(Gs %*% par); m <- max(eta); as.numeric(colMeans(Gs * exp(eta - m)) * exp(m)) }
+  opt <- optim(rep(0, p), obj, gr, method = "BFGS",
+               control = list(reltol = reltol, maxit = maxit))
+  lambda <- opt$par / sc
+  w_raw <- exp(drop(G %*% lambda))
+  list(lambda = as.numeric(lambda), weights = as.numeric(w_raw / mean(w_raw)),
+       convergence = opt$convergence)
+}
+
+# ===========================================================================
+# Machinery for specification_robust()
+# ===========================================================================
+
+layer1_learners <- function(seed = 123, num.trees = 400) list(
+  fit_outcome        = function(x, y) grf::regression_forest(model_mat_grf(x), y,
+                          num.trees = num.trees, seed = seed),
+  predict_outcome    = function(fit, x) as.numeric(predict(fit, model_mat_grf(x))$predictions),
+  predict_outcome_oob    = function(fit) as.numeric(predict(fit)$predictions),
+  predict_propensity_oob = function(fit) {
+    p <- predict(fit)$predictions
+    if (is.matrix(p)) as.numeric(p[, ncol(p)]) else as.numeric(p) },
+  fit_propensity     = function(x, a) grf::probability_forest(model_mat_grf(x),
+                          factor(a, levels = c(0, 1)), num.trees = num.trees, seed = seed),
+  predict_propensity = function(fit, x) {
+    p <- predict(fit, model_mat_grf(x))$predictions
+    if (is.matrix(p)) as.numeric(p[, ncol(p)]) else as.numeric(p) })
+
+layer2_learners <- function(seed = 123, num.trees = 2000) list(
+  fit     = function(x, y) grf::regression_forest(model_mat_grf(x), y,
+                num.trees = num.trees, seed = seed),
+  predict = function(fit, x) as.numeric(predict(fit, model_mat_grf(x))$predictions),
+  predict_oob = function(fit) as.numeric(predict(fit)$predictions))
+
+make_folds <- function(n, num_folds, seed = 123) {
+  withr::with_seed(seed,
+    sample(rep(seq_len(num_folds), length.out = n), size = n, replace = FALSE))
+}
+
+apply_tilt <- function(G, lam) {
+  e <- drop(as.matrix(G) %*% lam)
+  v <- if (max(e) > 300) exp(e - max(e)) else exp(e)   # shift only if needed
+  list(weights = v/mean(v))
 }
