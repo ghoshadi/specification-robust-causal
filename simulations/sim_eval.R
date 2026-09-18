@@ -1,9 +1,11 @@
 # ==============================================================================
 # Specification-robust Causal Inference (Ghosh & Rothenhaeusler 2026)
-# This contains all simulations used in the main paper.  Run from the folder
-# above simulations:
-#   Rscript simulations/simulations.R
-# The per-replication results are written to simulations/.
+# Empirical coverage and average width of the confidence intervals, for both
+# examples of Section 5.1.  The reweighted estimand tau_R is not recomputed
+# here; it is read from tauR.txt, which sim_oracle.R writes.
+# Run from inside the simulations folder:
+#   Rscript sim_eval.R
+# The per-replication results are written alongside.
 #
 # The contrasts here come from interacted linear regression rather than the
 # cross-fitted forests, so every fit is specrobust(..., reg_mode = "lm").
@@ -13,7 +15,11 @@ rm(list=ls())
 library(specrobust)
 if (!requireNamespace("pbapply", quietly = TRUE)) install.packages("pbapply")
 
-results_dir <- "simulations"
+results_dir <- "."
+
+# the oracle tau_R, from sim_oracle.R at n = 5e6
+oracle_tauR <- read.csv(file.path(results_dir, "tauR.txt"))
+oracle_tauR <- stats::setNames(oracle_tauR$tauR, oracle_tauR$example)
 
 n_samples <- 1000; n_boot <- 100; n_sims <- 100
 n_cores = parallel::detectCores()
@@ -59,37 +65,10 @@ mean(out$reweighted_estimates) # tauR = \E[w\tau_1]= \E[w\tau_2]
 mean(out$weights*X1) # \E_w[X_1]
 
 #-------------------------------------------------------
-# Preparing a plot for the paper
-#-------------------------------------------------------
-
-set.seed(123)
-n <- 1e6
-tau = 1 # true ATE
-X1 = rnorm(n); X2 = rnorm(n)
-A = as.numeric(runif(n) <= 1/(exp(5*X1+5*X2)+1))
-Y = A * (1 + X1 - 5*X2) + 4*X2 + rnorm(n)
-print(summary(fit1 <- lm(Y ~ A*X1))$coef["A",], digits=3) # incorrect 
-print(summary(fit2 <- lm(Y ~ A*(X1+X2)))$coef["A",], digits=3) # correct
-
-# Applying our reweighting approach
-out = specrobust(Y, A, data.frame(X1, X2), list(c("X1"),c("X1","X2")),
-                 reg_mode = "lm", alpha = alpha, n_boot = 0, verbose = T)
-
-# lm-based confidence intervals for each adjustment set
-ci_1 = out$candidate_ci[1,]
-ci_2 = out$candidate_ci[2,]
-
-# Naive confidence interval
-ci_naive = out$hull_ci
-
-# Plotting the histograms
-plot(out, covariates = c("X1", "X2"), breaks = 200)
-
-#-------------------------------------------------------
 # Empirical coverage and average lenght of CIs
 #-------------------------------------------------------
 
-print(tauR <- mean(out$reweighted_estimates))
+print(tauR <- oracle_tauR[["Example 1"]])
 
 run_experiment <- function(itr) {
   set.seed(itr)
@@ -151,7 +130,7 @@ U1 = rnorm(n); U2 = rnorm(n) # unobserved
 X1 = rnorm(n)
 A = as.numeric(U1 + X1 > 0)
 X2 = U1 + U2 # adjusting for X2 introduces M-bias
-Y1 = tau + X1 - U2 + rnorm(n); Y0 = 5*U2 + rnorm(n)
+Y1 = tau + 0.5*X1 - U2 + rnorm(n); Y0 = 5*U2 + rnorm(n)
 Y = ifelse(A==1, Y1, Y0) 
 print(summary(fit1 <- lm(Y ~ A*X1))$coef["A",], digits=3) # correct 
 print(summary(fit2 <- lm(Y ~ A*(X1+X2)))$coef["A",], digits=3) # incorrect
@@ -183,40 +162,10 @@ mean(out$reweighted_estimates) # tauR = \E[w\tau_1]= \E[w\tau_2]
 mean(out$weights*X1) # \E_w[X_1]
 
 #-------------------------------------------------------
-# Preparing a plot for the paper
-#-------------------------------------------------------
-
-set.seed(123)
-n <- 1e6
-tau = 1 # true ATE 
-U1 = rnorm(n); U2 = rnorm(n) # unobserved
-X1 = rnorm(n)
-A = as.numeric(U1 + X1 > 0)
-X2 = U1 + U2 # adjusting for X2 introduces M-bias
-Y1 = tau + X1 - U2 + rnorm(n); Y0 = 5*U2 + rnorm(n)
-Y = ifelse(A==1, Y1, Y0) 
-print(summary(fit1 <- lm(Y ~ A*X1))$coef["A",], digits=3) # incorrect 
-print(summary(fit2 <- lm(Y ~ A*(X1+X2)))$coef["A",], digits=3) # correct
-
-# Applying our reweighting approach
-out = specrobust(Y, A, data.frame(X1, X2), list(c("X1"),c("X1","X2")),
-                 reg_mode = "lm", alpha = alpha, n_boot = 0, verbose = T)
-
-# lm-based confidence intervals for each adjustment set
-ci_1 = out$candidate_ci[1,]
-ci_2 = out$candidate_ci[2,]
-
-# Naive confidence interval
-ci_naive = out$hull_ci
-
-# Plotting the histograms
-plot(out, covariates = c("X1", "X2"), breaks = 200)
-
-#-------------------------------------------------------
 # Empirical coverage and average lenght of CIs
 #-------------------------------------------------------
 
-print(tauR <- mean(out$reweighted_estimates))
+print(tauR <- oracle_tauR[["Example 2"]])
 
 run_experiment <- function(itr) {
   set.seed(itr)
@@ -226,7 +175,7 @@ run_experiment <- function(itr) {
   X1 = rnorm(n)
   A = as.numeric(U1 + X1 > 0)
   X2 = U1 + U2 # adjusting for X2 introduces M-bias
-  Y1 = tau + X1 - U2 + rnorm(n); Y0 = 5*U2 + rnorm(n)
+  Y1 = tau + 0.5*X1 - U2 + rnorm(n); Y0 = 5*U2 + rnorm(n)
   Y = ifelse(A==1, Y1, Y0) 
   out <- specrobust(Y, A, data.frame(X1, X2), list(c("X1"), c("X1","X2")),
                     reg_mode = "lm", alpha = alpha, n_boot = n_boot,

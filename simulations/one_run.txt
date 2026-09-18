@@ -1,0 +1,38 @@
+================ Example 1 ================
+n = 1000, one replication (seed 123)
+  true ATE  tau_bar               : 1.0000
+  adj set 1  estimate of tau_bar   :  -1.4960   CI [ -1.8531,  -1.1389]
+  adj set 2  estimate of tau_bar   :   1.0097   CI [  0.8125,   1.2070]
+  convex hull of the above        :            CI [ -1.8531,   1.2070]
+  proposed estimand  tau_R        :   1.5584   CI [  0.9885,   2.1284]
+  lambda*                         :   0.5515
+n = 5e+06, oracle (seed 123)
+  oracle tau_R                    :   2.0907
+  lambda*                         :   0.5143
+  reweighted estimates per set    : 2.0907, 2.0907
+  moments of the shared covariate X1 and of X2:
+    X1  original   mean  -0.0006  var   1.0001
+    X1  reweighted mean   1.0970  var   1.0019
+    X2  original   mean   0.0008  var   0.9999
+    X2  reweighted mean   0.0008  var   1.0001
+  implied mean shift of X1        :   1.0975
+
+================ Example 2 ================
+n = 1000, one replication (seed 123)
+  true ATE  tau_bar               : 1.0000
+  adj set 1  estimate of tau_bar   :   1.4604   CI [  0.8966,   2.0242]
+  adj set 2  estimate of tau_bar   :  -0.8973   CI [ -1.2975,  -0.4972]
+  convex hull of the above        :            CI [ -1.2975,   2.0242]
+  proposed estimand  tau_R        :   0.2245   CI [ -0.3819,   0.8310]
+  lambda*                         :  -0.5313
+n = 5e+06, oracle (seed 123)
+  oracle tau_R                    :   0.3995
+  lambda*                         :  -0.6485
+  reweighted estimates per set    : 0.3995, 0.3995
+  moments of the shared covariate X1 and of X2:
+    X1  original   mean   0.0002  var   1.0011
+    X1  reweighted mean  -1.1816  var   0.9962
+    X2  original   mean   0.0002  var   2.0004
+    X2  reweighted mean   0.0011  var   2.0035
+  implied mean shift of X1        :  -1.1818
+

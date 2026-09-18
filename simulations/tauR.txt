@@ -1,0 +1,3 @@
+example,tauR
+Example 1,2.0906906780
+Example 2,0.3995459399
