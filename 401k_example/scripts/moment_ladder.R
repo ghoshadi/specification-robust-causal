@@ -15,10 +15,7 @@ plots_dir   <- "401k_example/plots"
 
 weight_trim <- 0.05
 aipw_trim   <- 0.01
-k_max       <- 6
-d_max       <- 40
-se_jump     <- 2.0    # stop when the s.e. doubles against the previous order
-ess_floor   <- 0.05   # stop when the effective sample size falls below this
+k_basis     <- 20
 
 utils::data("pension", package = "hdm", envir = environment())
 df <- as.data.frame(pension)
@@ -127,32 +124,47 @@ run_ladder <- function(label, adj_sets, protect_req) {
   if (!length(protect)) { cat("nothing admissible to protect; ladder skipped\n"); return(NULL) }
 
   Xp <- df[, protect, drop = FALSE]
-  ob <- onb_nested(Xp, k_max)
+  ob <- onb_nested(Xp, k_basis)
   cat(sprintf("dim V_k    : %s   (of %s requested; the gap is linear dependence\n",
               paste(ob$dim_k, collapse = ", "), paste(ob$req_k, collapse = ", ")))
   cat("             on the sample support)\n")
 
   covs <- df[, unique(unlist(adj_sets))]
   rows <- list(); W <- list()
-  se_prev <- NA_real_; stop_at <- NA_integer_; stop_why <- ""
+  bal_0 <- NA_real_; stop_at <- NA_integer_; stop_why <- ""
 
-  for (k in 0:k_max) {
+  for (k in 0:k_basis) {
     d <- if (k == 0) 0 else ob$dim_k[k]
-    if (d > d_max) { stop_at <- k; stop_why <- sprintf("dim V_%d = %d exceeds d_max = %d", k, d, d_max); break }
 
     pf <- if (d == 0) NULL else local({ QQ <- ob$Q[, seq_len(d), drop = FALSE]; function(xc) QQ })
 
     t0  <- proc.time()[["elapsed"]]
     fargs <- list(response, treatment, covs, adj_sets, protect_fun = pf,
                   weight_trim = weight_trim, aipw_trim = aipw_trim,
-                  verbose = FALSE)
+                  return_full = TRUE, verbose = FALSE)
     fit <- tryCatch(do.call(specrobust, fargs),
       error = function(e) structure(list(msg = conditionMessage(e)), class = "err"))
     el <- proc.time()[["elapsed"]] - t0
 
     if (inherits(fit, "err")) {
       cat(sprintf("k=%d  d=%3d  FAILED: %s\n", k, d, fit$msg))
-      stop_at <- k; stop_why <- paste("the fit failed:", fit$msg); break
+      stop_at <- k; stop_why <- paste("the fit failed,", fit$msg); break
+    }
+
+    bal <- max(vapply(fit$full$folds,
+                      function(z) max(abs(z$mom_post_trim)), numeric(1)))
+    if (k == 0) bal_0 <- bal
+    if (!is.finite(bal)) {
+      stop_at <- k
+      stop_why <- sprintf(paste("the out-of-fold moment balance is not finite,",
+                                "so order %d cannot be evaluated"), k)
+      break
+    }
+    if (bal > 4 * bal_0) {
+      stop_at <- k
+      stop_why <- sprintf(paste("the out-of-fold moment balance %.3g is more than",
+                                "4 times the %.3g of the unprotected fit"), bal, bal_0)
+      break
     }
 
     red <- 100 * (1 - diff(fit$ci)/diff(fit$hull_ci))
@@ -163,7 +175,9 @@ run_ladder <- function(label, adj_sets, protect_req) {
       hull_lo = fit$hull_ci[1], hull_hi = fit$hull_ci[2],
       hull_width = diff(fit$hull_ci),
       ess_frac = ess_of(fit$weights)/fit$n_used,
-      kl = kl_div(fit$weights_raw),
+      kl = kl_div(fit$weights),
+      kl_in_sample = mean(vapply(fit$full$folds,
+                                 function(z) kl_div(z$w_tr), numeric(1))),
       lam_norm = mean(sqrt(rowSums(fit$lambda_by_fold^2))),
       max_w = max(fit$weights, na.rm = TRUE),
       n_used = fit$n_used, secs = el)
@@ -173,20 +187,15 @@ run_ladder <- function(label, adj_sets, protect_req) {
                 r$k, r$d, r$estimate, r$se, r$width, r$reduction,
                 100*r$ess_frac, r$kl, r$secs))
 
-    if (!is.na(se_prev) && r$se > se_jump * se_prev) {
-      stop_at <- k; stop_why <- sprintf("the s.e. rose by more than %.1fx against order %d", se_jump, k - 1); break }
-    if (r$ess_frac < ess_floor) {
-      stop_at <- k; stop_why <- sprintf("the effective sample size fell below %.0f%%", 100*ess_floor); break }
-    se_prev <- r$se
   }
 
   out <- do.call(rbind, rows)
   out$bal_1   <- vapply(seq_len(nrow(out)), function(i)
     bal_avg(Xp, W[[i]], 1),   numeric(1))
   out$bal_all <- vapply(seq_len(nrow(out)), function(i)
-    bal_avg(Xp, W[[i]], k_max), numeric(1))
+    bal_avg(Xp, W[[i]], max(out$k)), numeric(1))
   out$bal_1_unprot   <- bal_avg(Xp, W[[1]], 1)
-  out$bal_all_unprot <- bal_avg(Xp, W[[1]], k_max)
+  out$bal_all_unprot <- bal_avg(Xp, W[[1]], max(out$k))
   if (!is.na(stop_at)) cat(sprintf("\nladder stopped before order %d: %s\n", stop_at, stop_why))
   attr(out, "stop_at") <- stop_at; attr(out, "stop_why") <- stop_why
   attr(out, "protect") <- protect;  attr(out, "dropped")  <- dropped
@@ -210,7 +219,7 @@ for (lab in names(ladders)) {
       "\n", sep = "")
   cat(sprintf("%2s %4s %9s %7s %7s %9s %10s %10s %7s %8s\n",
               "k", "d", "estimate", "s.e.", "width", "reduction",
-              "bal 1st", sprintf("bal 1-%d", k_max), "ESS", "KL"))
+              "bal 1st", sprintf("bal 1-%d", max(L$k)), "ESS", "KL"))
   for (i in seq_len(nrow(L)))
     cat(sprintf("%2d %4d %9.4f %7.4f %7.4f %8.1f%% %10.2e %10.2e %6.1f%% %8.4f\n",
                 L$k[i], L$d[i], L$estimate[i], L$se[i], L$width[i],
@@ -226,4 +235,5 @@ dir.create(results_dir, showWarnings = FALSE, recursive = TRUE)
 dir.create(plots_dir,   showWarnings = FALSE, recursive = TRUE)
 f <- file.path(results_dir, "moment_ladder.rds")
 saveRDS(ladders, f); cat("\nWrote ", f, "\n", sep = "")
-write_final_figures(ladders, plots_dir)
+write_final_figures(ladders, plots_dir, type = "out-of-fold")
+write_final_figures(ladders, plots_dir, type = "in-sample")
