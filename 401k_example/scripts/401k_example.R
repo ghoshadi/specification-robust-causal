@@ -7,6 +7,7 @@
 rm(list = ls())
 
 library(specrobust)
+if (!requireNamespace("hdm", quietly = TRUE)) install.packages("hdm")
 
 results_dir <- "401k_example/results"
 plots_dir   <- "401k_example/plots"

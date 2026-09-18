@@ -11,6 +11,7 @@
 
 rm(list=ls())
 library(specrobust)
+if (!requireNamespace("pbapply", quietly = TRUE)) install.packages("pbapply")
 
 results_dir <- "simulations"
 

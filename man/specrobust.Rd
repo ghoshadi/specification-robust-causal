@@ -26,7 +26,8 @@ specrobust(
   n_cores = 1,
   seed = 42,
   verbose = FALSE,
-  return_full = FALSE
+  return_full = FALSE,
+  reuse = NULL
 )
 }
 \arguments{
@@ -100,6 +101,11 @@ than one core has no effect on Windows. \code{reg_mode = "lm"} only.}
 
 \item{return_full}{Whether the per-fold intermediates are attached to the
 result as \verb{$full}. \code{reg_mode = "grf"} only.}
+
+\item{reuse}{The \verb{$full$crossfit} component of an earlier fit on the same
+data, folds and adjustment sets. The layer-1 and layer-2 forests do not
+depend on \code{protect_vars} or \code{protect_fun}, so supplying this skips
+refitting them and only the tilt is recomputed. \code{reg_mode = "grf"} only.}
 }
 \value{
 A \code{specrobust} object. The fields common to both modes are

@@ -7,6 +7,7 @@
 # ==============================================================================
 rm(list = ls())
 library(specrobust)
+if (!requireNamespace("hdm", quietly = TRUE)) install.packages("hdm")
 
 source('./401k_example/scripts/ladder_final_plot.R')
 
@@ -132,6 +133,7 @@ run_ladder <- function(label, adj_sets, protect_req) {
   covs <- df[, unique(unlist(adj_sets))]
   rows <- list(); W <- list()
   bal_0 <- NA_real_; stop_at <- NA_integer_; stop_why <- ""
+  crossfit <- NULL
 
   for (k in 0:k_basis) {
     d <- if (k == 0) 0 else ob$dim_k[k]
@@ -141,10 +143,11 @@ run_ladder <- function(label, adj_sets, protect_req) {
     t0  <- proc.time()[["elapsed"]]
     fargs <- list(response, treatment, covs, adj_sets, protect_fun = pf,
                   weight_trim = weight_trim, aipw_trim = aipw_trim,
-                  return_full = TRUE, verbose = FALSE)
+                  return_full = TRUE, verbose = FALSE, reuse = crossfit)
     fit <- tryCatch(do.call(specrobust, fargs),
       error = function(e) structure(list(msg = conditionMessage(e)), class = "err"))
     el <- proc.time()[["elapsed"]] - t0
+    if (!inherits(fit, "err") && is.null(crossfit)) crossfit <- fit$full$crossfit
 
     if (inherits(fit, "err")) {
       cat(sprintf("k=%d  d=%3d  FAILED: %s\n", k, d, fit$msg))

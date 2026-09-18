@@ -2,7 +2,7 @@ fit_grf <- function(response, treatment, covariates, adj_sets,
                     protect_vars, protect_fun, protect_orthonormalize,
                     ref_index, verbose, alpha, seed, num_folds,
                     propensity_clip, num_trees, nu_regularize, bias_corr,
-                    aipw_trim, weight_trim, return_full) {
+                    aipw_trim, weight_trim, return_full, reuse = NULL) {
 
   K <- length(adj_sets)
   if (is.null(ref_index)) ref_index <- 1
@@ -42,6 +42,7 @@ fit_grf <- function(response, treatment, covariates, adj_sets,
         if (pd == 0) "none" else paste(Fb$names, collapse = ", "), pd))
 
   FD <- vector("list", num_folds); nu_sys <- vector("list", num_folds)
+  CF <- vector("list", num_folds)
   aipw_oof <- tau_hat_oof <- matrix(NA_real_, n, K)
   g_hat_oof <- matrix(NA_real_, n, K - 1 + pd)
   m1_oof <- weights_oof <- w_raw_oof <- eta_oof <- psi_oof <- bc_oof <- rep(NA_real_, n)
@@ -53,6 +54,7 @@ fit_grf <- function(response, treatment, covariates, adj_sets,
   fold_estimate <- fold_se <- fold_ess <- rep(NA_real_, num_folds)
 
   for (o in seq_len(num_folds)) {
+    if (is.null(reuse)) {
     TR <- which(fold_id != o); EV <- which(fold_id == o)
     Xtr <- X[TR, , drop = FALSE]; Xev <- X[EV, , drop = FALSE]
     XcTR <- Xtr[, common, drop = FALSE]; XcEV <- Xev[, common, drop = FALSE]
@@ -116,6 +118,14 @@ fit_grf <- function(response, treatment, covariates, adj_sets,
       }
     G_ev <- do.call(cbind, lapply(2:K, function(k) m_ev[, 1] - m_ev[, k]))
     G_tr <- do.call(cbind, lapply(2:K, function(k) m_tr[, 1] - m_tr[, k]))
+    CF[[o]] <- list(TR = TR, EV = EV, psi_ev = psi_ev, tau_ev = tau_ev,
+                    m_ev = m_ev, G_ev = G_ev, G_tr = G_tr, ED = ED, n_ev = n_ev)
+    } else {
+      z <- reuse[[o]]
+      TR <- z$TR; EV <- z$EV; psi_ev <- z$psi_ev; tau_ev <- z$tau_ev
+      m_ev <- z$m_ev; G_ev <- z$G_ev; G_tr <- z$G_tr; ED <- z$ED; n_ev <- z$n_ev
+      CF[[o]] <- z
+    }
 
     F_ev  <- Fb$F[EV, , drop = FALSE]
     F_tr  <- Fb$F[TR, , drop = FALSE]
@@ -278,7 +288,7 @@ fit_grf <- function(response, treatment, covariates, adj_sets,
       protect_orthonormalize = protect_orthonormalize))
 
   if (return_full) out$full <- list(
-    folds = FD, nu_sys = nu_sys, cycles = cycles, K = K,
+    folds = FD, nu_sys = nu_sys, cycles = cycles, K = K, crossfit = CF,
     tau_hat_oof = tau_hat_oof, aipw_oof = aipw_oof, g_hat_oof = g_hat_oof,
     m1_oof = m1_oof, w_raw_oof = w_raw_oof, eta_oof = eta_oof, Fb = Fb,
     psi_oof = psi_oof, bc_oof = bc_oof)

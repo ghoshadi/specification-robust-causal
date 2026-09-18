@@ -57,6 +57,10 @@
 #' @param verbose Whether progress information is printed while fitting.
 #' @param return_full Whether the per-fold intermediates are attached to the
 #'   result as `$full`. `reg_mode = "grf"` only.
+#' @param reuse The `$full$crossfit` component of an earlier fit on the same
+#'   data, folds and adjustment sets. The layer-1 and layer-2 forests do not
+#'   depend on `protect_vars` or `protect_fun`, so supplying this skips
+#'   refitting them and only the tilt is recomputed. `reg_mode = "grf"` only.
 #'
 #' @return A `specrobust` object. The fields common to both modes are
 #'   `estimate`, `se` and `ci` for the reweighted population;
@@ -118,7 +122,8 @@ specrobust <- function(response,
                        n_cores = 1,
                        seed = 42,
                        verbose = FALSE,
-                       return_full = FALSE) {
+                       return_full = FALSE,
+                       reuse = NULL) {
 
   reg_mode <- match.arg(reg_mode)
   validate_inputs(response, treatment, covariates, adj_sets)
@@ -151,7 +156,7 @@ specrobust <- function(response,
                    propensity_clip = propensity_clip, num_trees = num_trees,
                    nu_regularize = nu_regularize, bias_corr = bias_corr,
                    aipw_trim = aipw_trim, weight_trim = weight_trim,
-                   return_full = return_full)
+                   return_full = return_full, reuse = reuse)
   }
 
   out$reg_mode <- reg_mode
