@@ -41,9 +41,13 @@
 #'   `reg_mode = "grf"` only.
 #' @param aipw_trim Evaluation rows outside the `aipw_trim` and
 #'   `1 - aipw_trim` quantiles of any candidate pseudo-outcome are dropped.
+#'   `aipw_trim` guards against poorly fitted nuisance functions resulting in
+#'   extreme AIPW summands even when using a propensity clip.
 #'   `reg_mode = "grf"` only.
 #' @param weight_trim Evaluation rows above the `1 - weight_trim` quantile of
-#'   the transfer weights are dropped. `reg_mode = "grf"` only.
+#'   the transfer weights are dropped. `weight_trim` guards against poorly
+#'   fitted weights concentrating on a few observations.
+#'   `reg_mode = "grf"` only.
 #' @param n_boot Number of bootstrap replications, or `0` to fit the point
 #'   estimates and the transfer weights only, leaving `se` and `ci` as `NA`.
 #'   `reg_mode = "lm"` only.

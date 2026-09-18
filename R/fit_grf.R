@@ -127,6 +127,10 @@ fit_grf <- function(response, treatment, covariates, adj_sets,
     w_obj <- solve_lam(as.matrix(G_fit))
     lam   <- as.numeric(w_obj$lambda)
     w_raw_full <- as.numeric(apply_tilt(G_ev, lam)$weights)
+    if (!all(is.finite(w_raw_full)))
+      stop("The transfer weights are not finite on fold ", o,
+           ". The tilt has diverged; try a larger weight_trim, ",
+           "fewer protected moments, or a larger propensity_clip.")
     w_tr   <- as.numeric(apply_tilt(G_tr, lam)$weights)
     sd_tr  <- apply(G_tr, 2, stats::sd); sd_tr[sd_tr <= 0] <- 1
     bal_tr <- colMeans(w_tr * G_tr)/sd_tr
@@ -217,6 +221,9 @@ fit_grf <- function(response, treatment, covariates, adj_sets,
   }
 
   used <- !is.na(eta_oof); n_used <- sum(used)
+  if (n_used == 0)
+    stop("No evaluation rows survived the trimming. ",
+         "Please try pre-processing the data in a different manner.")
   estimate <- mean(eta_oof[used]); se <- sqrt(stats::var(psi_oof[used])/n_used)
   ci <- get_ci_from_ests(estimate, se, alpha)
   a_ok <- stats::complete.cases(aipw_oof); n_a <- sum(a_ok)

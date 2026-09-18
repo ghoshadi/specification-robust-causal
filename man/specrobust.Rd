@@ -78,10 +78,14 @@ candidates, shrinking towards equal weights. \code{reg_mode = "grf"} only.}
 
 \item{aipw_trim}{Evaluation rows outside the \code{aipw_trim} and
 \code{1 - aipw_trim} quantiles of any candidate pseudo-outcome are dropped.
+\code{aipw_trim} guards against poorly fitted nuisance functions resulting in
+extreme AIPW summands even when using a propensity clip.
 \code{reg_mode = "grf"} only.}
 
 \item{weight_trim}{Evaluation rows above the \code{1 - weight_trim} quantile of
-the transfer weights are dropped. \code{reg_mode = "grf"} only.}
+the transfer weights are dropped. \code{weight_trim} guards against poorly
+fitted weights concentrating on a few observations.
+\code{reg_mode = "grf"} only.}
 
 \item{n_boot}{Number of bootstrap replications, or \code{0} to fit the point
 estimates and the transfer weights only, leaving \code{se} and \code{ci} as \code{NA}.
